@@ -1,15 +1,24 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, NavigationEnd, RouterModule } from '@angular/router';
+import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatSidenavModule } from '@angular/material/sidenav';
-import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatBadgeModule } from '@angular/material/badge';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatDialog } from '@angular/material/dialog';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { RoleName } from '../../core/models';
+import { BreadcrumbsComponent } from '../components/breadcrumbs/breadcrumbs.component';
+import { UserAvatarComponent } from '../components/user-avatar/user-avatar.component';
 
 interface MenuItem {
   label: string;
@@ -21,6 +30,11 @@ interface MenuItem {
 interface MenuGroup {
   label: string;
   items: MenuItem[];
+}
+
+interface Breadcrumb {
+  label: string;
+  route?: string;
 }
 
 const MENU: MenuGroup[] = [
@@ -67,51 +81,152 @@ const MENU: MenuGroup[] = [
   },
 ];
 
+const BREADCRUMBS: Record<string, string> = {
+  home: 'Inicio',
+  admin: 'Administración',
+  teacher: 'Docencia',
+  student: 'Estudiante',
+  users: 'Usuarios',
+  students: 'Estudiantes',
+  teachers: 'Docentes',
+  careers: 'Carreras',
+  subjects: 'Materias',
+  commissions: 'Comisiones',
+  enrollments: 'Inscripciones',
+  classrooms: 'Aulas',
+  schedules: 'Horarios',
+  classes: 'Clases',
+  reports: 'Reportes',
+  audit: 'Auditoría',
+  scan: 'Escanear QR',
+  history: 'Mi Asistencia',
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Administrador',
+  DOCENTE: 'Docente',
+  ALUMNO: 'Alumno',
+  AUDITOR: 'Auditor',
+};
+
+const SIDEBAR_KEY = 'sau.sidebar';
+const MOBILE_QUERY = '(max-width: 959px)';
+
 @Component({
   selector: 'app-shell',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     RouterModule,
     MatToolbarModule,
     MatSidenavModule,
-    MatListModule,
     MatIconModule,
     MatButtonModule,
+    MatMenuModule,
+    MatBadgeModule,
+    MatTooltipModule,
+    MatDividerModule,
+    BreadcrumbsComponent,
+    UserAvatarComponent,
   ],
   template: `
     <mat-sidenav-container class="shell">
-      <mat-sidenav #snav [mode]="mode" [opened]="opened" class="nav">
+      <mat-sidenav
+        class="nav"
+        [class.collapsed]="collapsed && !mobile"
+        [mode]="mobile ? 'over' : 'side'"
+        [opened]="mobile ? mobileOpen : true"
+        (openedChange)="onOpenedChange($event)">
         <div class="brand">
           <mat-icon>qr_code_2</mat-icon>
-          <span>{{ appName }}</span>
+          @if (!collapsed || mobile) {
+            <span class="brand-name">Asistencia</span>
+          }
         </div>
-        <mat-nav-list>
-          <ng-container *ngFor="let group of menu">
-            <div class="menu-group">{{ group.label }}</div>
-            <a mat-list-item
-               *ngFor="let item of group.items"
-               [routerLink]="item.route"
-               routerLinkActive="active"
-               [routerLinkActiveOptions]="{ exact: item.route === '/home' }"
-               (click)="onNav()">
-              <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
-              <span>{{ item.label }}</span>
-            </a>
-          </ng-container>
-        </mat-nav-list>
+
+        <nav class="menu-scroll" aria-label="Menú principal">
+          @for (group of menu; track group.label) {
+            @if (collapsed && !mobile) {
+              <mat-divider class="group-sep" aria-hidden="true"></mat-divider>
+            } @else {
+              <div class="menu-group">{{ group.label }}</div>
+            }
+            @for (item of group.items; track item.route) {
+              <a
+                class="nav-item"
+                [routerLink]="item.route"
+                routerLinkActive="active"
+                [routerLinkActiveOptions]="{ exact: item.route === '/home' }"
+                (click)="onNav()"
+                [attr.aria-label]="item.label"
+                [matTooltip]="collapsed && !mobile ? item.label : ''"
+                matTooltipPosition="right">
+                <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
+                @if (!collapsed || mobile) {
+                  <span class="item-label">{{ item.label }}</span>
+                }
+              </a>
+            }
+          }
+        </nav>
       </mat-sidenav>
+
       <mat-sidenav-content>
-        <mat-toolbar color="primary" class="topbar">
-          <button mat-icon-button (click)="snav.toggle()" aria-label="Menú">
-            <mat-icon>menu</mat-icon>
+        <mat-toolbar class="topbar">
+          <button
+            mat-icon-button
+            (click)="toggleSidebar()"
+            [attr.aria-label]="menuButtonLabel">
+            <mat-icon>{{ menuIcon }}</mat-icon>
           </button>
-          <span class="user">{{ userLabel }}</span>
+
+          <app-breadcrumbs class="crumbs" [crumbs]="crumbs"></app-breadcrumbs>
+
           <span class="spacer"></span>
-          <button mat-icon-button (click)="logout()" aria-label="Salir">
-            <mat-icon>logout</mat-icon>
+
+          <button
+            mat-icon-button
+            (click)="theme.toggle()"
+            [attr.aria-label]="dark ? 'Activar modo claro' : 'Activar modo oscuro'">
+            <mat-icon>{{ dark ? 'light_mode' : 'dark_mode' }}</mat-icon>
           </button>
+
+          <button
+            mat-icon-button
+            aria-label="Notificaciones"
+            [matBadge]="unread"
+            matBadgeOverlap="false"
+            [matBadgeHidden]="unread === 0"
+            (click)="notifications.clear()">
+            <mat-icon>notifications</mat-icon>
+          </button>
+
+          <button
+            mat-icon-button
+            class="profile-btn"
+            [matMenuTriggerFor]="profileMenu"
+            aria-label="Menú de perfil">
+            <app-user-avatar [name]="userName" [size]="36"></app-user-avatar>
+          </button>
+
+          <mat-menu #profileMenu="matMenu" xPosition="before" class="profile-menu">
+            <div class="profile-header">
+              <div class="profile-name">{{ userName }}</div>
+              <div class="profile-roles">{{ rolesText }}</div>
+            </div>
+            <mat-divider></mat-divider>
+            <button mat-menu-item (click)="openChangePassword()">
+              <mat-icon>key</mat-icon>
+              <span>Cambiar contraseña</span>
+            </button>
+            <button mat-menu-item (click)="logout()">
+              <mat-icon>logout</mat-icon>
+              <span>Cerrar sesión</span>
+            </button>
+          </mat-menu>
         </mat-toolbar>
+
         <main class="content">
           <router-outlet></router-outlet>
         </main>
@@ -119,74 +234,321 @@ const MENU: MenuGroup[] = [
     </mat-sidenav-container>
   `,
   styles: `
-    .shell { height: 100vh; }
-    .nav { width: 260px; background: #1e293b; color: #fff; }
-    .nav .mat-mdc-list-item { color: #cbd5e1; }
-    .nav .mat-mdc-list-item.active { background: rgba(99, 102, 241, 0.25); color: #fff; }
-    .brand {
-      display: flex; align-items: center; gap: 8px; padding: 16px;
-      font-weight: 600; font-size: 1.05rem; color: #fff;
+    .shell {
+      height: 100vh;
     }
+
+    .nav {
+      width: 272px;
+      background: var(--surface-card);
+      border-right: 1px solid var(--border-color);
+      transition: width var(--dur-med) var(--ease-out);
+    }
+    .nav.collapsed {
+      width: 76px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 64px;
+      padding: 0 20px;
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 1.05rem;
+      white-space: nowrap;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .brand mat-icon {
+      flex: none;
+      color: var(--color-primary-600);
+    }
+    .nav.collapsed .brand {
+      justify-content: center;
+      padding: 0;
+    }
+
+    .menu-scroll {
+      overflow-y: auto;
+      padding-block: 8px 16px;
+      max-height: calc(100vh - 64px);
+    }
+
     .menu-group {
-      padding: 16px 16px 4px;
+      padding: 20px 20px 6px;
       font-size: 0.7rem;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #64748b;
+      color: var(--text-tertiary);
     }
-    .topbar { position: sticky; top: 0; z-index: 10; }
-    .spacer { flex: 1 1 auto; }
-    .user { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .content { padding: 16px; max-width: 1200px; margin: 0 auto; }
-    @media (min-width: 901px) {
-      .topbar .mat-icon-button:first-child { display: none; }
-      .content { padding: 24px; }
+    .group-sep {
+      margin: 10px 14px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 44px;
+      margin: 2px 10px;
+      padding: 0 12px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: var(--fs-body);
+      transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+    }
+    .nav-item mat-icon {
+      flex: none;
+      color: var(--text-tertiary);
+      transition: color var(--dur-fast) var(--ease-out);
+    }
+    .nav-item:hover {
+      background: var(--surface-muted);
+      color: var(--text-primary);
+    }
+    .nav-item.active {
+      background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
+      color: var(--color-primary-600);
+      font-weight: 500;
+    }
+    .nav-item.active mat-icon {
+      color: var(--color-primary-600);
+    }
+    .item-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .nav.collapsed .nav-item {
+      justify-content: center;
+      padding: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: auto;
+      min-height: 64px;
+      padding: 8px 16px;
+      background: var(--surface-card);
+      border-bottom: 1px solid var(--border-color);
+      box-shadow: none;
+    }
+    .crumbs {
+      min-width: 0;
+      margin-inline: 8px;
+    }
+    .profile-btn {
+      margin-inline-start: 4px;
+    }
+
+    .content {
+      padding: var(--page-padding);
+    }
+
+    .profile-header {
+      padding: 12px 16px;
+      min-width: 200px;
+    }
+    .profile-name {
+      font-weight: 600;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .profile-roles {
+      margin-top: 2px;
+      font-size: var(--fs-caption);
+      color: var(--text-secondary);
+    }
+
+    @media (max-width: 959px) {
+      .content {
+        padding: 16px;
+      }
+    }
+    @media (max-width: 599px) {
+      .topbar {
+        padding-inline: 8px;
+      }
+      .crumbs {
+        display: none;
+      }
     }
   `,
 })
 export class ShellComponent implements OnInit, OnDestroy {
-  appName = 'Asistencia Universitaria';
   menu: MenuGroup[] = [];
-  mode: 'side' | 'over' = 'side';
-  opened = true;
-  private mobile = false;
+  crumbs: Breadcrumb[] = [];
+  unread = 0;
+  dark = false;
+  collapsed = false;
+  mobile = false;
+  mobileOpen = false;
+  userName = '';
+  rolesText = '';
+
+  private subs = new Subscription();
 
   constructor(
     private auth: AuthService,
     private bp: BreakpointObserver,
-    private notifications: NotificationService,
+    readonly notifications: NotificationService,
+    readonly theme: ThemeService,
+    private dialog: MatDialog,
+    private router: Router,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
+    const pref = localStorage.getItem(SIDEBAR_KEY);
+    this.collapsed = pref === 'collapsed';
+
+    const user = this.auth.getUser();
+    this.userName = user?.full_name ?? '';
+    this.rolesText = (user?.roles ?? []).map((r: string) => ROLE_LABELS[r] ?? r).join(' · ');
+
     this.menu = MENU.map((g) => ({
       ...g,
       items: g.items.filter((m) => this.auth.hasAnyRole(...m.roles)),
     })).filter((g) => g.items.length > 0);
+
     this.notifications.start();
-    this.bp.observe(['(max-width: 900px)']).subscribe((state) => {
-      this.mobile = state.matches;
-      this.mode = this.mobile ? 'over' : 'side';
-      this.opened = !this.mobile;
-    });
+    this.subs.add(this.notifications.unread$.subscribe((n) => {
+      this.unread = n;
+      this.cdr.markForCheck();
+    }));
+    this.subs.add(this.theme.isDark$.subscribe((d) => {
+      this.dark = d;
+      this.cdr.markForCheck();
+    }));
+    this.subs.add(
+      this.bp.observe([MOBILE_QUERY]).subscribe((state) => {
+        this.mobile = state.matches;
+        if (this.mobile) {
+          this.mobileOpen = false;
+        }
+        this.cdr.markForCheck();
+      }),
+    );
+    this.subs.add(
+      this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => {
+        this.crumbs = this.buildCrumbs();
+        if (this.mobile) {
+          this.mobileOpen = false;
+        }
+        this.cdr.markForCheck();
+      }),
+    );
+    this.crumbs = this.buildCrumbs();
   }
 
   ngOnDestroy(): void {
-    /* el observer se limpia solo con providedIn root */
+    this.subs.unsubscribe();
   }
 
-  get userLabel(): string {
-    const u = this.auth.getUser();
-    return u ? `${u.full_name} (${(u.roles ?? []).join(', ')})` : '';
+  get menuIcon(): string {
+    if (this.mobile) {
+      return 'menu';
+    }
+    return this.collapsed ? 'menu' : 'menu_open';
+  }
+
+  get menuButtonLabel(): string {
+    if (this.mobile) {
+      return 'Abrir menú';
+    }
+    return this.collapsed ? 'Expandir menú' : 'Contraer menú';
+  }
+
+  toggleSidebar(): void {
+    if (this.mobile) {
+      this.mobileOpen = !this.mobileOpen;
+      return;
+    }
+    this.collapsed = !this.collapsed;
+    localStorage.setItem(SIDEBAR_KEY, this.collapsed ? 'collapsed' : 'expanded');
+  }
+
+  onOpenedChange(opened: boolean): void {
+    if (this.mobile) {
+      this.mobileOpen = opened;
+    }
   }
 
   onNav(): void {
     if (this.mobile) {
-      this.opened = false;
+      this.mobileOpen = false;
     }
+  }
+
+  openChangePassword(): void {
+    void import('./change-password.component').then((m) => {
+      this.dialog.open(m.ChangePasswordComponent, {
+        width: '420px',
+        maxWidth: '92vw',
+      });
+    });
   }
 
   logout(): void {
     this.auth.logout();
+  }
+
+  private buildCrumbs(): Breadcrumb[] {
+    const segments = this.router.url.split('/').filter(Boolean);
+    const recognized = segments.filter((s) => BREADCRUMBS[s]);
+    let found = 0;
+    const crumbs: Breadcrumb[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      const title = BREADCRUMBS[segments[i]];
+      if (!title) {
+        continue;
+      }
+      found++;
+      const path = '/' + segments.slice(0, i + 1).join('/');
+      const isLast = found === recognized.length;
+      crumbs.push({
+        label: title,
+        route: !isLast && this.pathExists(path.split('/').filter(Boolean), this.router.config) ? path : undefined,
+      });
+    }
+    return crumbs;
+  }
+
+  private pathExists(segments: string[], routes: { path?: string; children?: unknown[] }[]): boolean {
+    if (segments.length === 0) {
+      return true;
+    }
+    for (const route of routes) {
+      if (!route.path) {
+        continue;
+      }
+      const routeSegs = route.path.split('/').filter(Boolean);
+      if (routeSegs.length > segments.length) {
+        continue;
+      }
+      const matches = routeSegs.every((rs, j) => rs === segments[j] || rs.startsWith(':'));
+      if (!matches) {
+        continue;
+      }
+      const rest = segments.slice(routeSegs.length);
+      if (rest.length === 0) {
+        return true;
+      }
+      if (route.children && this.pathExists(rest, route.children as { path?: string; children?: unknown[] }[])) {
+        return true;
+      }
+    }
+    return false;
   }
 }
