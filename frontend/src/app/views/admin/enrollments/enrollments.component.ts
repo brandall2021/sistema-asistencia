@@ -63,6 +63,10 @@ function enrollmentFields(students: Student[], commissions: Commission[]): Field
   ];
 }
 
+function readonlyFields(fields: FieldConfig[]): FieldConfig[] {
+  return fields.map((field) => ({ ...field, disabled: true }));
+}
+
 function toEnrollmentPayload(values: Record<string, unknown>): Record<string, unknown> {
   return {
     student_id: String(values['student_id'] ?? ''),
@@ -94,6 +98,7 @@ function toEnrollmentPayload(values: Record<string, unknown>): Record<string, un
       title="Inscripciones"
       subtitle="Estudiantes inscritos en comisiones"
       icon="how_to_reg"
+      [breadcrumbs]="breadcrumbs"
       [primaryAction]="primaryAction"
       (primaryClick)="openCreate()"
     ></app-page-header>
@@ -157,6 +162,10 @@ function toEnrollmentPayload(values: Record<string, unknown>): Record<string, un
         <mat-icon>more_vert</mat-icon>
       </button>
       <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openView(row)">
+          <mat-icon>visibility</mat-icon>
+          <span>Ver</span>
+        </button>
         <button mat-menu-item (click)="openEdit(row)">
           <mat-icon>edit</mat-icon>
           <span>Editar</span>
@@ -229,6 +238,11 @@ export class EnrollmentsComponent implements OnInit {
   commissionFilter = 'all';
   statusFilter = 'all';
   primaryAction: PageAction = { label: 'Nueva inscripción', icon: 'add', type: 'flat', color: 'primary' };
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Académico' },
+    { label: 'Inscripciones' },
+  ];
 
   constructor(
     private api: ApiService,
@@ -317,33 +331,42 @@ export class EnrollmentsComponent implements OnInit {
     await this.openDialog();
   }
 
+  async openView(enrollment: Enrollment): Promise<void> {
+    await this.openDialog(enrollment, true);
+  }
+
   async openEdit(enrollment: Enrollment): Promise<void> {
     await this.openDialog(enrollment);
   }
 
-  private async openDialog(enrollment?: Enrollment): Promise<void> {
+  private async openDialog(enrollment?: Enrollment, readonly = false): Promise<void> {
+    const fields = readonly ? readonlyFields(enrollmentFields(this.students, this.commissions)) : enrollmentFields(this.students, this.commissions);
     const ref = this.dialog.open(FormDialogComponent, {
       width: '720px',
       maxWidth: '95vw',
       data: {
-        title: enrollment ? 'Editar inscripción' : 'Nueva inscripción',
-        subtitle: 'Selecciona alumno, comisión y estado',
+        title: readonly ? 'Ver inscripción' : enrollment ? 'Editar inscripción' : 'Nueva inscripción',
+        subtitle: readonly ? 'Detalles de la inscripción' : 'Selecciona alumno, comisión y estado',
         icon: 'how_to_reg',
-        fields: enrollmentFields(this.students, this.commissions),
+        fields,
         values: enrollment
           ? { student_id: enrollment.student_id, commission_id: enrollment.commission_id, status: enrollment.status }
           : { student_id: this.students[0]?.id ?? null, commission_id: this.commissions[0]?.id ?? null, status: 'ACTIVE' },
-        submitLabel: enrollment ? 'Guardar cambios' : 'Crear inscripción',
-        submit: async (values: Record<string, unknown>) => {
-          const payload = toEnrollmentPayload(values);
-          if (enrollment) {
-            await this.api.patch(`/enrollments/${enrollment.id}`, payload);
-            this.toast.success('Inscripción actualizada');
-          } else {
-            await this.api.post('/enrollments', payload);
-            this.toast.success('Inscripción creada');
-          }
-        },
+        submitLabel: readonly ? 'Cerrar' : enrollment ? 'Guardar cambios' : 'Crear inscripción',
+        ...(readonly
+          ? {}
+          : {
+              submit: async (values: Record<string, unknown>) => {
+                const payload = toEnrollmentPayload(values);
+                if (enrollment) {
+                  await this.api.patch(`/enrollments/${enrollment.id}`, payload);
+                  this.toast.success('Inscripción actualizada');
+                } else {
+                  await this.api.post('/enrollments', payload);
+                  this.toast.success('Inscripción creada');
+                }
+              },
+            }),
       },
     });
 

@@ -61,6 +61,10 @@ function scheduleFields(commissions: Commission[], classrooms: Classroom[]): Fie
   ];
 }
 
+function readonlyFields(fields: FieldConfig[]): FieldConfig[] {
+  return fields.map((field) => ({ ...field, disabled: true }));
+}
+
 function toSchedulePayload(values: Record<string, unknown>): Record<string, unknown> {
   return {
     commission_id: String(values['commission_id'] ?? ''),
@@ -95,6 +99,7 @@ function toSchedulePayload(values: Record<string, unknown>): Record<string, unkn
       title="Horarios"
       subtitle="Días y horas de dictado por comisión y aula"
       icon="schedule"
+      [breadcrumbs]="breadcrumbs"
       [primaryAction]="primaryAction"
       (primaryClick)="openCreate()"
     ></app-page-header>
@@ -166,6 +171,10 @@ function toSchedulePayload(values: Record<string, unknown>): Record<string, unkn
         <mat-icon>more_vert</mat-icon>
       </button>
       <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openView(row)">
+          <mat-icon>visibility</mat-icon>
+          <span>Ver</span>
+        </button>
         <button mat-menu-item (click)="openEdit(row)">
           <mat-icon>edit</mat-icon>
           <span>Editar</span>
@@ -216,9 +225,14 @@ export class SchedulesComponent implements OnInit {
   searchTerm = '';
   commissionFilter = 'all';
   classroomFilter = 'all';
-  dayFilter = 'all';
+  dayFilter: number | 'all' = 'all';
   statusFilter: 'all' | 'active' | 'inactive' = 'all';
   primaryAction: PageAction = { label: 'Nuevo horario', icon: 'add', type: 'flat', color: 'primary' };
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Asistencia' },
+    { label: 'Horarios' },
+  ];
 
   constructor(
     private api: ApiService,
@@ -264,7 +278,7 @@ export class SchedulesComponent implements OnInit {
       const matchesSearch = !search || [item.commission_name, item.subject_name, item.classroom_name, item.classroom_code, DAYS[item.day_of_week], item.start_time, item.end_time, item.active ? 'activo' : 'inactivo'].some((value) => normalizeText(value).includes(search));
       const matchesCommission = this.commissionFilter === 'all' || item.commission_id === this.commissionFilter;
       const matchesClassroom = this.classroomFilter === 'all' || item.classroom_id === this.classroomFilter;
-      const matchesDay = this.dayFilter === 'all' || String(item.day_of_week) === this.dayFilter;
+      const matchesDay = this.dayFilter === 'all' || item.day_of_week === this.dayFilter;
       const matchesStatus = this.statusFilter === 'all' || (this.statusFilter === 'active' ? item.active : !item.active);
       return matchesSearch && matchesCommission && matchesClassroom && matchesDay && matchesStatus;
     });
@@ -308,19 +322,24 @@ export class SchedulesComponent implements OnInit {
     await this.openDialog();
   }
 
+  async openView(schedule: Schedule): Promise<void> {
+    await this.openDialog(schedule, true);
+  }
+
   async openEdit(schedule: Schedule): Promise<void> {
     await this.openDialog(schedule);
   }
 
-  private async openDialog(schedule?: Schedule): Promise<void> {
+  private async openDialog(schedule?: Schedule, readonly = false): Promise<void> {
+    const fields = readonly ? readonlyFields(scheduleFields(this.commissions, this.classrooms)) : scheduleFields(this.commissions, this.classrooms);
     const ref = this.dialog.open(FormDialogComponent, {
       width: '760px',
       maxWidth: '95vw',
       data: {
-        title: schedule ? 'Editar horario' : 'Nuevo horario',
-        subtitle: 'Define comisión, aula y franja horaria',
+        title: readonly ? 'Ver horario' : schedule ? 'Editar horario' : 'Nuevo horario',
+        subtitle: readonly ? 'Detalles del horario' : 'Define comisión, aula y franja horaria',
         icon: 'schedule',
-        fields: scheduleFields(this.commissions, this.classrooms),
+        fields,
         values: schedule
           ? {
               commission_id: schedule.commission_id,
@@ -331,17 +350,21 @@ export class SchedulesComponent implements OnInit {
               active: schedule.active,
             }
           : { commission_id: this.commissions[0]?.id ?? null, classroom_id: this.classrooms[0]?.id ?? null, day_of_week: 1, start_time: '', end_time: '', active: true },
-        submitLabel: schedule ? 'Guardar cambios' : 'Crear horario',
-        submit: async (values: Record<string, unknown>) => {
-          const payload = toSchedulePayload(values);
-          if (schedule) {
-            await this.api.patch(`/schedules/${schedule.id}`, payload);
-            this.toast.success('Horario actualizado');
-          } else {
-            await this.api.post('/schedules', payload);
-            this.toast.success('Horario creado');
-          }
-        },
+        submitLabel: readonly ? 'Cerrar' : schedule ? 'Guardar cambios' : 'Crear horario',
+        ...(readonly
+          ? {}
+          : {
+              submit: async (values: Record<string, unknown>) => {
+                const payload = toSchedulePayload(values);
+                if (schedule) {
+                  await this.api.patch(`/schedules/${schedule.id}`, payload);
+                  this.toast.success('Horario actualizado');
+                } else {
+                  await this.api.post('/schedules', payload);
+                  this.toast.success('Horario creado');
+                }
+              },
+            }),
       },
     });
 

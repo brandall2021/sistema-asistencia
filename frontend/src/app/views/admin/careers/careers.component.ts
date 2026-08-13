@@ -40,6 +40,10 @@ function careerFields(): FieldConfig[] {
   ];
 }
 
+function readonlyFields(fields: FieldConfig[]): FieldConfig[] {
+  return fields.map((field) => ({ ...field, disabled: true }));
+}
+
 function toCareerPayload(values: Record<string, unknown>): Record<string, unknown> {
   const description = String(values['description'] ?? '').trim();
   return {
@@ -73,6 +77,7 @@ function toCareerPayload(values: Record<string, unknown>): Record<string, unknow
       title="Carreras"
       subtitle="Gestión breve de carreras de la institución"
       icon="school"
+      [breadcrumbs]="breadcrumbs"
       [primaryAction]="primaryAction"
       (primaryClick)="openCreate()"
     ></app-page-header>
@@ -129,6 +134,10 @@ function toCareerPayload(values: Record<string, unknown>): Record<string, unknow
         <mat-icon>more_vert</mat-icon>
       </button>
       <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openView(row)">
+          <mat-icon>visibility</mat-icon>
+          <span>Ver</span>
+        </button>
         <button mat-menu-item (click)="openEdit(row)">
           <mat-icon>edit</mat-icon>
           <span>Editar</span>
@@ -198,6 +207,11 @@ export class CareersComponent implements OnInit {
   searchTerm = '';
   statusFilter: 'all' | 'active' | 'inactive' = 'all';
   primaryAction: PageAction = { label: 'Nueva carrera', icon: 'add', type: 'flat', color: 'primary' };
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Académico' },
+    { label: 'Carreras' },
+  ];
 
   constructor(
     private api: ApiService,
@@ -276,33 +290,42 @@ export class CareersComponent implements OnInit {
     await this.openDialog();
   }
 
+  async openView(career: Career): Promise<void> {
+    await this.openDialog(career, true);
+  }
+
   async openEdit(career: Career): Promise<void> {
     await this.openDialog(career);
   }
 
-  private async openDialog(career?: Career): Promise<void> {
+  private async openDialog(career?: Career, readonly = false): Promise<void> {
+    const fields = readonly ? readonlyFields(careerFields()) : careerFields();
     const ref = this.dialog.open(FormDialogComponent, {
       width: '680px',
       maxWidth: '95vw',
       data: {
-        title: career ? 'Editar carrera' : 'Nueva carrera',
-        subtitle: 'Completa los datos breves de la carrera',
+        title: readonly ? 'Ver carrera' : career ? 'Editar carrera' : 'Nueva carrera',
+        subtitle: readonly ? 'Detalles de la carrera' : 'Completa los datos breves de la carrera',
         icon: 'school',
-        fields: careerFields(),
+        fields,
         values: career
           ? { name: career.name, code: career.code, description: career.description ?? '', active: career.active }
           : { name: '', code: '', description: '', active: true },
-        submitLabel: career ? 'Guardar cambios' : 'Crear carrera',
-        submit: async (values: Record<string, unknown>) => {
-          const payload = toCareerPayload(values);
-          if (career) {
-            await this.api.patch(`/careers/${career.id}`, payload);
-            this.toast.success('Carrera actualizada');
-          } else {
-            await this.api.post('/careers', payload);
-            this.toast.success('Carrera creada');
-          }
-        },
+        submitLabel: readonly ? 'Cerrar' : career ? 'Guardar cambios' : 'Crear carrera',
+        ...(readonly
+          ? {}
+          : {
+              submit: async (values: Record<string, unknown>) => {
+                const payload = toCareerPayload(values);
+                if (career) {
+                  await this.api.patch(`/careers/${career.id}`, payload);
+                  this.toast.success('Carrera actualizada');
+                } else {
+                  await this.api.post('/careers', payload);
+                  this.toast.success('Carrera creada');
+                }
+              },
+            }),
       },
     });
 

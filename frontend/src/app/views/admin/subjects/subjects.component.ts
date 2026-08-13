@@ -49,6 +49,10 @@ function subjectFields(careers: Career[]): FieldConfig[] {
   ];
 }
 
+function readonlyFields(fields: FieldConfig[]): FieldConfig[] {
+  return fields.map((field) => ({ ...field, disabled: true }));
+}
+
 function toSubjectPayload(values: Record<string, unknown>): Record<string, unknown> {
   return {
     name: String(values['name'] ?? '').trim(),
@@ -83,6 +87,7 @@ function toSubjectPayload(values: Record<string, unknown>): Record<string, unkno
       title="Materias"
       subtitle="Gestión breve de materias y planes de estudio"
       icon="menu_book"
+      [breadcrumbs]="breadcrumbs"
       [primaryAction]="primaryAction"
       (primaryClick)="openCreate()"
     ></app-page-header>
@@ -146,6 +151,10 @@ function toSubjectPayload(values: Record<string, unknown>): Record<string, unkno
         <mat-icon>more_vert</mat-icon>
       </button>
       <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openView(row)">
+          <mat-icon>visibility</mat-icon>
+          <span>Ver</span>
+        </button>
         <button mat-menu-item (click)="openEdit(row)">
           <mat-icon>edit</mat-icon>
           <span>Editar</span>
@@ -217,6 +226,11 @@ export class SubjectsComponent implements OnInit {
   careerFilter = 'all';
   statusFilter: 'all' | 'active' | 'inactive' = 'all';
   primaryAction: PageAction = { label: 'Nueva materia', icon: 'add', type: 'flat', color: 'primary' };
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Académico' },
+    { label: 'Materias' },
+  ];
 
   constructor(
     private api: ApiService,
@@ -300,19 +314,24 @@ export class SubjectsComponent implements OnInit {
     await this.openDialog();
   }
 
+  async openView(subject: Subject): Promise<void> {
+    await this.openDialog(subject, true);
+  }
+
   async openEdit(subject: Subject): Promise<void> {
     await this.openDialog(subject);
   }
 
-  private async openDialog(subject?: Subject): Promise<void> {
+  private async openDialog(subject?: Subject, readonly = false): Promise<void> {
+    const fields = readonly ? readonlyFields(subjectFields(this.careers)) : subjectFields(this.careers);
     const ref = this.dialog.open(FormDialogComponent, {
       width: '720px',
       maxWidth: '95vw',
       data: {
-        title: subject ? 'Editar materia' : 'Nueva materia',
-        subtitle: 'Completa los datos básicos de la materia',
+        title: readonly ? 'Ver materia' : subject ? 'Editar materia' : 'Nueva materia',
+        subtitle: readonly ? 'Detalles de la materia' : 'Completa los datos básicos de la materia',
         icon: 'menu_book',
-        fields: subjectFields(this.careers),
+        fields,
         values: subject
           ? {
               name: subject.name,
@@ -323,17 +342,21 @@ export class SubjectsComponent implements OnInit {
               active: subject.active,
             }
           : { name: '', code: '', career_id: this.careers[0]?.id ?? null, semester: null, credits: null, active: true },
-        submitLabel: subject ? 'Guardar cambios' : 'Crear materia',
-        submit: async (values: Record<string, unknown>) => {
-          const payload = toSubjectPayload(values);
-          if (subject) {
-            await this.api.patch(`/subjects/${subject.id}`, payload);
-            this.toast.success('Materia actualizada');
-          } else {
-            await this.api.post('/subjects', payload);
-            this.toast.success('Materia creada');
-          }
-        },
+        submitLabel: readonly ? 'Cerrar' : subject ? 'Guardar cambios' : 'Crear materia',
+        ...(readonly
+          ? {}
+          : {
+              submit: async (values: Record<string, unknown>) => {
+                const payload = toSubjectPayload(values);
+                if (subject) {
+                  await this.api.patch(`/subjects/${subject.id}`, payload);
+                  this.toast.success('Materia actualizada');
+                } else {
+                  await this.api.post('/subjects', payload);
+                  this.toast.success('Materia creada');
+                }
+              },
+            }),
       },
     });
 

@@ -44,6 +44,10 @@ function classroomFields(): FieldConfig[] {
   ];
 }
 
+function readonlyFields(fields: FieldConfig[]): FieldConfig[] {
+  return fields.map((field) => ({ ...field, disabled: true }));
+}
+
 function toClassroomPayload(values: Record<string, unknown>): Record<string, unknown> {
   return {
     name: String(values['name'] ?? '').trim(),
@@ -80,6 +84,7 @@ function toClassroomPayload(values: Record<string, unknown>): Record<string, unk
       title="Aulas"
       subtitle="Ubicación y radio de tolerancia por aula"
       icon="meeting_room"
+      [breadcrumbs]="breadcrumbs"
       [primaryAction]="primaryAction"
       (primaryClick)="openCreate()"
     ></app-page-header>
@@ -136,6 +141,10 @@ function toClassroomPayload(values: Record<string, unknown>): Record<string, unk
         <mat-icon>more_vert</mat-icon>
       </button>
       <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openView(row)">
+          <mat-icon>visibility</mat-icon>
+          <span>Ver</span>
+        </button>
         <button mat-menu-item (click)="openEdit(row)">
           <mat-icon>edit</mat-icon>
           <span>Editar</span>
@@ -205,6 +214,11 @@ export class ClassroomsComponent implements OnInit {
   searchTerm = '';
   statusFilter: 'all' | 'active' | 'inactive' = 'all';
   primaryAction: PageAction = { label: 'Nueva aula', icon: 'add', type: 'flat', color: 'primary' };
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Asistencia' },
+    { label: 'Aulas' },
+  ];
 
   constructor(
     private api: ApiService,
@@ -284,19 +298,24 @@ export class ClassroomsComponent implements OnInit {
     await this.openDialog();
   }
 
+  async openView(classroom: Classroom): Promise<void> {
+    await this.openDialog(classroom, true);
+  }
+
   async openEdit(classroom: Classroom): Promise<void> {
     await this.openDialog(classroom);
   }
 
-  private async openDialog(classroom?: Classroom): Promise<void> {
+  private async openDialog(classroom?: Classroom, readonly = false): Promise<void> {
+    const fields = readonly ? readonlyFields(classroomFields()) : classroomFields();
     const ref = this.dialog.open(FormDialogComponent, {
       width: '760px',
       maxWidth: '95vw',
       data: {
-        title: classroom ? 'Editar aula' : 'Nueva aula',
-        subtitle: 'Define la ubicación y el radio permitido',
+        title: readonly ? 'Ver aula' : classroom ? 'Editar aula' : 'Nueva aula',
+        subtitle: readonly ? 'Detalles del aula' : 'Define la ubicación y el radio permitido',
         icon: 'meeting_room',
-        fields: classroomFields(),
+        fields,
         values: classroom
           ? {
               name: classroom.name,
@@ -309,17 +328,21 @@ export class ClassroomsComponent implements OnInit {
               active: classroom.active,
             }
           : { name: '', code: '', building: '', floor: '', latitude: null, longitude: null, radius_meters: null, active: true },
-        submitLabel: classroom ? 'Guardar cambios' : 'Crear aula',
-        submit: async (values: Record<string, unknown>) => {
-          const payload = toClassroomPayload(values);
-          if (classroom) {
-            await this.api.patch(`/classrooms/${classroom.id}`, payload);
-            this.toast.success('Aula actualizada');
-          } else {
-            await this.api.post('/classrooms', payload);
-            this.toast.success('Aula creada');
-          }
-        },
+        submitLabel: readonly ? 'Cerrar' : classroom ? 'Guardar cambios' : 'Crear aula',
+        ...(readonly
+          ? {}
+          : {
+              submit: async (values: Record<string, unknown>) => {
+                const payload = toClassroomPayload(values);
+                if (classroom) {
+                  await this.api.patch(`/classrooms/${classroom.id}`, payload);
+                  this.toast.success('Aula actualizada');
+                } else {
+                  await this.api.post('/classrooms', payload);
+                  this.toast.success('Aula creada');
+                }
+              },
+            }),
       },
     });
 
