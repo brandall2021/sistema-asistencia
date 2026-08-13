@@ -7,8 +7,9 @@ export class FormsService {
   buildForm(fields: FieldConfig[], values?: Record<string, unknown>): FormGroup {
     const controls: Record<string, FormControl> = {};
     for (const field of fields) {
+      const value = this.normalizeValue(field, values?.[field.key]);
       controls[field.key] = new FormControl(
-        { value: values?.[field.key] ?? this.defaultValue(field), disabled: !!field.disabled },
+        { value, disabled: !!field.disabled },
         this.validatorsFor(field),
       );
     }
@@ -43,6 +44,13 @@ export class FormsService {
         case 'number':
           value = value === '' || value == null ? null : Number(value);
           break;
+        case 'date':
+          value = value instanceof Date
+            ? this.formatDate(value)
+            : value == null || value === ''
+              ? null
+              : String(value);
+          break;
         case 'multiselect':
           value = Array.isArray(value) ? value : [];
           break;
@@ -59,6 +67,8 @@ export class FormsService {
     switch (field.type) {
       case 'checkbox':
         return false;
+      case 'date':
+        return null;
       case 'multiselect':
         return [];
       case 'select':
@@ -66,6 +76,31 @@ export class FormsService {
       default:
         return '';
     }
+  }
+
+  private normalizeValue(field: FieldConfig, value: unknown): unknown {
+    if (field.type !== 'date' || value == null || value === '') {
+      return value ?? this.defaultValue(field);
+    }
+    if (value instanceof Date) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (match) {
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      }
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? this.defaultValue(field) : parsed;
+    }
+    return this.defaultValue(field);
+  }
+
+  private formatDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   private validatorsFor(field: FieldConfig): ValidatorFn[] {
