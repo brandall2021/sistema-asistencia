@@ -99,6 +99,9 @@ def _ensure_teacher(db: Session, user: User, data: dict) -> Teacher | None:
     existing = db.execute(select(Teacher).where(Teacher.user_id == user.id)).scalar_one_or_none()
     if existing is not None:
         return existing
+    existing = db.execute(select(Teacher).where(Teacher.employee_number == data["employee_number"])).scalar_one_or_none()
+    if existing is not None:
+        return existing
     teacher = Teacher(user_id=user.id, **data)
     db.add(teacher)
     db.commit()
@@ -107,6 +110,9 @@ def _ensure_teacher(db: Session, user: User, data: dict) -> Teacher | None:
 
 def _ensure_student(db: Session, user: User, data: dict) -> Student | None:
     existing = db.execute(select(Student).where(Student.user_id == user.id)).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    existing = db.execute(select(Student).where(Student.registration_number == data["registration_number"])).scalar_one_or_none()
     if existing is not None:
         return existing
     student = Student(user_id=user.id, **data)
