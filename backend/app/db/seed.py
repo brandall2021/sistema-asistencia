@@ -20,24 +20,24 @@ ROLES = [
 # Cuentas de ejemplo (solo se crean si no existen). Contraseña para todas: "Ejemplo123!"
 EXAMPLE_ACCOUNTS = [
     {
-        "email": "docente@universidad.edu",
-        "username": "docente",
+        "email": "docente.demo@universidad.edu",
+        "username": "docente.demo",
         "full_name": "Dra. Elena Rojas",
         "password": "Ejemplo123!",
         "role": RoleName.DOCENTE,
         "teacher": {"employee_number": "EMP-1001", "title": "Dra.", "department": "Ciencias de la Computación"},
     },
     {
-        "email": "alumno@universidad.edu",
-        "username": "alumno",
+        "email": "alumno.demo@universidad.edu",
+        "username": "alumno.demo",
         "full_name": "Lucas Fernández",
         "password": "Ejemplo123!",
         "role": RoleName.ALUMNO,
         "student": {"registration_number": "ALU-2026-001", "dni": "40123456", "year": 1},
     },
     {
-        "email": "auditor@universidad.edu",
-        "username": "auditor",
+        "email": "auditor.demo@universidad.edu",
+        "username": "auditor.demo",
         "full_name": "Ing. Marta Peralta",
         "password": "Ejemplo123!",
         "role": RoleName.AUDITOR,
