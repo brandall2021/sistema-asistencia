@@ -53,7 +53,7 @@ export class UserAvatarComponent {
   }
 
   get toneIndex(): number {
-    return this.hash(this.name) % AVATAR_TONES;
+    return (this.hash(this.name) >>> 0) % AVATAR_TONES;
   }
 
   private hash(s: string): number {
@@ -61,6 +61,6 @@ export class UserAvatarComponent {
     for (let i = 0; i < s.length; i++) {
       h = (h * 31 + s.charCodeAt(i)) | 0;
     }
-    return Math.abs(h);
+    return h;
   }
 }

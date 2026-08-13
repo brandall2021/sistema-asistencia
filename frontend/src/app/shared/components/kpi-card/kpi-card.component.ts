@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 
-type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
 @Component({
   selector: 'app-kpi-card',

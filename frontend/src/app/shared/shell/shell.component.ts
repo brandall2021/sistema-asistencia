@@ -496,6 +496,7 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.dialog.open(m.ChangePasswordComponent, {
         width: '420px',
         maxWidth: '92vw',
+        ariaLabel: 'Cambiar contraseña',
       });
     });
   }
