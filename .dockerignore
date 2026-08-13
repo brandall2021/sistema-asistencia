@@ -1,0 +1,13 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/*.pyo
+frontend/node_modules
+frontend/dist
+backend/tests
+backend/.env
+*.db
+*.sqlite3
+.env
+certs
