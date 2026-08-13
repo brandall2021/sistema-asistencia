@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
 import { ApiService } from '../../../core/services/api.service';
 import { AuditLog, Page } from '../../../core/models';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
@@ -19,6 +19,7 @@ function normalizeText(value: unknown): string {
 @Component({
   selector: 'app-audit',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     PageHeaderComponent,
@@ -72,7 +73,6 @@ export class AuditComponent implements OnInit {
   loading = true;
   loadError = '';
   searchTerm = '';
-  page: Page<AuditLog> | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -91,8 +91,12 @@ export class AuditComponent implements OnInit {
     this.loading = true;
     this.loadError = '';
     try {
-      this.page = await this.api.get<Page<AuditLog>>('/audit', { page: 1, page_size: 1000 });
-      this.items = this.page.items;
+      const firstPage = await this.api.get<Page<AuditLog>>('/audit', { page: 1, page_size: 200 });
+      const pages = Math.max(1, firstPage.pages ?? 1);
+      const rest = await Promise.all(
+        Array.from({ length: pages - 1 }, (_, index) => this.api.get<Page<AuditLog>>('/audit', { page: index + 2, page_size: firstPage.page_size })),
+      );
+      this.items = [firstPage.items, ...rest.map((page) => page.items)].flat();
     } catch (error: any) {
       this.loadError = error?.error?.detail || 'No se pudieron cargar los registros';
     } finally {

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, TemplateRef, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, TemplateRef, ViewChild } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
@@ -74,6 +74,7 @@ function toStudentUpdatePayload(values: Record<string, unknown>): Record<string,
 @Component({
   selector: 'app-students',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule, MatButtonModule, MatDialogModule, MatIconModule, MatMenuModule,
     PageHeaderComponent, FilterBarComponent, ResponsiveTableComponent, LoadingSkeletonComponent,
