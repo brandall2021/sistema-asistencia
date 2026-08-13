@@ -76,10 +76,10 @@ sistema-asistencia/
 
 | Rol | Vistas |
 | --- | --- |
-| ADMIN | Usuarios, Estudiantes, Docentes, Carreras, Materias, Comisiones, Inscripciones, Aulas, Horarios, Clases, Reportes, Auditoría |
-| DOCENTE | Mis Clases (solo sus comisiones), detalle de clase con QR y asistencia en vivo |
-| ALUMNO | Escanear QR, Mi Asistencia (historial) |
-| AUDITOR | Reportes (solo lectura) |
+| ADMIN | Inicio (dashboard), Usuarios, Estudiantes, Docentes, Carreras, Materias, Comisiones, Inscripciones, Aulas, Horarios, Clases, Reportes, Auditoría |
+| DOCENTE | Inicio (dashboard), Mis Clases (solo sus comisiones), detalle de clase con QR y asistencia en vivo |
+| ALUMNO | Inicio (dashboard), Escanear QR, Mi Asistencia (historial) |
+| AUDITOR | Inicio (dashboard), Reportes (solo lectura) |
 
 ---
 
@@ -222,11 +222,22 @@ Cada recurso expone el mismo patrón (acceso ADMIN):
 | --- | --- | --- |
 | GET | `/audit` | Registro de acciones sensibles (paginado) |
 
+### Dashboard (`/dashboard`)
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| GET | `/summary` | Resumen por rol: clases hoy/activas, tasa de asistencia del día, justificaciones pendientes, alumnos con baja asistencia, próximas clases, asistencia reciente, materias en riesgo (alumno) y últimos eventos de auditoría (admin/auditor). |
+
+El resumen está acotado al alcance del usuario: ADMIN/AUDITOR ven todo, DOCENTE solo sus comisiones y ALUMNO solo sus inscripciones/registros.
+
 ---
 
 ## WebSocket en tiempo real
 
-- **URL**: `wss://<host>/api/v1/ws/classes/{class_id}?token=<access_token>`
+- **Se obtiene un ticket de un solo uso**: `POST /auth/ws-ticket` (Bearer access) → `{"ticket": "...", "expires_in": 30}`.
+- **URL**: `wss://<host>/api/v1/ws/classes/{class_id}?ticket=<ticket>` — el access token **no viaja en la URL**.
+- El ticket: expira en 30 s (configurable), es de un solo uso, está asociado al usuario y a la clase, y se guarda en Redis (con fallback en memoria).
+- Por compatibilidad se acepta aún `?token=<access_token>` (deprecado).
 - El docente abre el canal al iniciar la clase y ve las asistencias **en vivo**.
 - Mensajes del cliente: `{"event": "ping"}`.
 - Respuestas del servidor:
@@ -241,14 +252,20 @@ Cada recurso expone el mismo patrón (acceso ADMIN):
 
 - **JWT HS256**: access token de **30 min** y refresh token de **7 días**, con `iss` propio (`sistema-asistencia-universitaria`).
 - Contraseñas con **Argon2** (nunca en claro; seed inicial crea el admin).
-- **Refresh tokens revocables**: se guardan en un store (Redis con fallback en memoria) y se invalidan en logout/rotación.
+- **Refresh tokens revocables y con rotación**: se invalidan en logout y en cada refresh; el backend también emite el refresh en **cookie HttpOnly** (`/api/v1/auth`, `SameSite=lax`, `Secure` en producción) y lo acepta por cookie o por body.
+- **Validación de arranque en producción**: el backend se niega a iniciar si `JWT_SECRET_KEY` es el predeterminado/corto (< 32 bytes), `ADMIN_PASSWORD=Admin123!`, la contraseña de PostgreSQL es `asistencia`, o `CORS_ORIGINS` tiene comodines/localhost. Los mensajes no exponen los secretos.
 - **Rate limiting** por IP (Redis, con fallback en memoria):
   - Login: `10` intentos / 5 min.
   - Check-in: `5` / 5 min.
   - Resto de la API: `120` / 5 min.
+  - `X-Forwarded-For` solo se acepta desde proxies incluidos en `TRUSTED_PROXIES` (IP/CIDR); de otro modo se usa la IP real del peer, impidiendo evadir el límite cambiando la cabecera.
 - **CORS** restringido por `CORS_ORIGINS`.
 - **Auditoría** de acciones sensibles.
 - Importante en producción: cambiar `JWT_SECRET_KEY` y usar credenciales de admin fuertes.
+
+### Deuda técnica registrada
+
+- **Migración de tokens en el navegador pendiente**: el frontend aún guarda access y refresh en `localStorage`. La migración a **access en memoria + refresh en cookie HttpOnly** está soportada por el backend (login/refresh/logout ya fijan/rotan/limpian la cookie) pero no se completó para no romper la autenticación con un cambio parcial. Prioridad alta de seguridad.
 
 ---
 
@@ -270,6 +287,11 @@ Cada recurso expone el mismo patrón (acceso ADMIN):
 | `RATE_LIMIT_PERIOD_SECONDS` | `300` | Ventana del rate-limit |
 | `RATE_LIMIT_CHECKIN` | `5` | Check-ins permitidos |
 | `RATE_LIMIT_DEFAULT` | `120` | Límite general |
+| `TRUSTED_PROXIES` | *(vacío)* | IP/CIDR de proxies confiables para aceptar `X-Forwarded-For` |
+| `REFRESH_COOKIE_NAME` | `refresh_token` | Nombre de la cookie HttpOnly |
+| `REFRESH_COOKIE_SECURE` | `false` | `true` en producción (HTTPS) |
+| `REFRESH_COOKIE_SAMESITE` | `lax` | `lax` o `strict` |
+| `WS_TICKET_TTL_SECONDS` | `30` | Vida del ticket de WebSocket (un solo uso) |
 | `CORS_ORIGINS` | `http://localhost:4200,...` | Orígenes CORS separados por coma |
 | `ADMIN_EMAIL` | `admin@universidad.edu` | Email del admin inicial |
 | `ADMIN_USERNAME` | `admin` | Usuario del admin inicial |

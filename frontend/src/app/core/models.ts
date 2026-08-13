@@ -235,3 +235,49 @@ export interface WSEvent {
   detail?: string;
   data?: Attendance | ClassSession;
 }
+
+export interface UpcomingClass {
+  id: string;
+  title: string;
+  subject: string;
+  commission: string;
+  classroom?: string | null;
+  date: string;
+  starts_at?: string | null;
+  status: string;
+}
+
+export interface RecentAttendance {
+  id: string;
+  student_name: string;
+  class_title: string;
+  date: string;
+  status: string;
+  check_in_at?: string | null;
+}
+
+export interface SubjectRisk {
+  subject: string;
+  commission: string;
+  attendance_pct: number;
+}
+
+export interface AuditEventBrief {
+  id: string;
+  action: string;
+  username?: string | null;
+  created_at: string;
+}
+
+export interface DashboardSummary {
+  classes_today: number;
+  active_classes: number;
+  attendance_rate_today?: number | null;
+  pending_justifications: number;
+  low_attendance_students: number;
+  upcoming_classes: UpcomingClass[];
+  next_class?: UpcomingClass | null;
+  recent_attendance: RecentAttendance[];
+  subjects_at_risk: SubjectRisk[];
+  recent_audit: AuditEventBrief[];
+}

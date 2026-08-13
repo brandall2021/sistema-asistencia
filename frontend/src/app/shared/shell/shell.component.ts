@@ -17,22 +17,53 @@ interface MenuItem {
   roles: RoleName[];
 }
 
-const MENU: MenuItem[] = [
-  { label: 'Usuarios', icon: 'group', route: '/admin/users', roles: [RoleName.ADMIN] },
-  { label: 'Estudiantes', icon: 'school', route: '/admin/students', roles: [RoleName.ADMIN] },
-  { label: 'Docentes', icon: 'co_present', route: '/admin/teachers', roles: [RoleName.ADMIN] },
-  { label: 'Carreras', icon: 'account_balance', route: '/admin/careers', roles: [RoleName.ADMIN] },
-  { label: 'Materias', icon: 'menu_book', route: '/admin/subjects', roles: [RoleName.ADMIN] },
-  { label: 'Comisiones', icon: 'groups', route: '/admin/commissions', roles: [RoleName.ADMIN] },
-  { label: 'Inscripciones', icon: 'how_to_reg', route: '/admin/enrollments', roles: [RoleName.ADMIN] },
-  { label: 'Aulas', icon: 'meeting_room', route: '/admin/classrooms', roles: [RoleName.ADMIN] },
-  { label: 'Horarios', icon: 'schedule', route: '/admin/schedules', roles: [RoleName.ADMIN] },
-  { label: 'Clases', icon: 'class', route: '/admin/classes', roles: [RoleName.ADMIN] },
-  { label: 'Reportes', icon: 'assessment', route: '/admin/reports', roles: [RoleName.ADMIN, RoleName.AUDITOR] },
-  { label: 'Auditoría', icon: 'fact_check', route: '/admin/audit', roles: [RoleName.ADMIN] },
-  { label: 'Mis Clases', icon: 'class', route: '/teacher/classes', roles: [RoleName.DOCENTE] },
-  { label: 'Escanear QR', icon: 'qr_code_scanner', route: '/student/scan', roles: [RoleName.ALUMNO] },
-  { label: 'Mi Asistencia', icon: 'fact_check', route: '/student/history', roles: [RoleName.ALUMNO] },
+interface MenuGroup {
+  label: string;
+  items: MenuItem[];
+}
+
+const MENU: MenuGroup[] = [
+  {
+    label: 'Inicio',
+    items: [
+      { label: 'Inicio', icon: 'home', route: '/home', roles: [RoleName.ADMIN, RoleName.DOCENTE, RoleName.ALUMNO, RoleName.AUDITOR] },
+    ],
+  },
+  {
+    label: 'Personas',
+    items: [
+      { label: 'Usuarios', icon: 'group', route: '/admin/users', roles: [RoleName.ADMIN] },
+      { label: 'Estudiantes', icon: 'school', route: '/admin/students', roles: [RoleName.ADMIN] },
+      { label: 'Docentes', icon: 'co_present', route: '/admin/teachers', roles: [RoleName.ADMIN] },
+    ],
+  },
+  {
+    label: 'Académico',
+    items: [
+      { label: 'Carreras', icon: 'account_balance', route: '/admin/careers', roles: [RoleName.ADMIN] },
+      { label: 'Materias', icon: 'menu_book', route: '/admin/subjects', roles: [RoleName.ADMIN] },
+      { label: 'Comisiones', icon: 'groups', route: '/admin/commissions', roles: [RoleName.ADMIN] },
+      { label: 'Inscripciones', icon: 'how_to_reg', route: '/admin/enrollments', roles: [RoleName.ADMIN] },
+    ],
+  },
+  {
+    label: 'Asistencia',
+    items: [
+      { label: 'Aulas', icon: 'meeting_room', route: '/admin/classrooms', roles: [RoleName.ADMIN] },
+      { label: 'Horarios', icon: 'schedule', route: '/admin/schedules', roles: [RoleName.ADMIN] },
+      { label: 'Clases', icon: 'class', route: '/admin/classes', roles: [RoleName.ADMIN] },
+      { label: 'Mis Clases', icon: 'class', route: '/teacher/classes', roles: [RoleName.DOCENTE] },
+      { label: 'Reportes', icon: 'assessment', route: '/admin/reports', roles: [RoleName.ADMIN, RoleName.AUDITOR] },
+      { label: 'Escanear QR', icon: 'qr_code_scanner', route: '/student/scan', roles: [RoleName.ALUMNO] },
+      { label: 'Mi Asistencia', icon: 'fact_check', route: '/student/history', roles: [RoleName.ALUMNO] },
+    ],
+  },
+  {
+    label: 'Administración',
+    items: [
+      { label: 'Auditoría', icon: 'fact_check', route: '/admin/audit', roles: [RoleName.ADMIN] },
+    ],
+  },
 ];
 
 @Component({
@@ -55,14 +86,18 @@ const MENU: MenuItem[] = [
           <span>{{ appName }}</span>
         </div>
         <mat-nav-list>
-          <a mat-list-item
-             *ngFor="let item of menu"
-             [routerLink]="item.route"
-             routerLinkActive="active"
-             (click)="onNav()">
-            <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
-            <span>{{ item.label }}</span>
-          </a>
+          <ng-container *ngFor="let group of menu">
+            <div class="menu-group">{{ group.label }}</div>
+            <a mat-list-item
+               *ngFor="let item of group.items"
+               [routerLink]="item.route"
+               routerLinkActive="active"
+               [routerLinkActiveOptions]="{ exact: item.route === '/home' }"
+               (click)="onNav()">
+              <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </a>
+          </ng-container>
         </mat-nav-list>
       </mat-sidenav>
       <mat-sidenav-content>
@@ -91,6 +126,14 @@ const MENU: MenuItem[] = [
       display: flex; align-items: center; gap: 8px; padding: 16px;
       font-weight: 600; font-size: 1.05rem; color: #fff;
     }
+    .menu-group {
+      padding: 16px 16px 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
     .topbar { position: sticky; top: 0; z-index: 10; }
     .spacer { flex: 1 1 auto; }
     .user { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -103,7 +146,10 @@ const MENU: MenuItem[] = [
 })
 export class ShellComponent implements OnInit, OnDestroy {
   appName = 'Asistencia Universitaria';
-  menu: MenuItem[] = MENU.filter((m) => this.auth.hasAnyRole(...m.roles));
+  menu: MenuGroup[] = MENU.map((g) => ({
+    ...g,
+    items: g.items.filter((m) => this.auth.hasAnyRole(...m.roles)),
+  })).filter((g) => g.items.length > 0);
   mode: 'side' | 'over' = 'side';
   opened = true;
   private mobile = false;

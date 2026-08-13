@@ -8,6 +8,7 @@ from app.api.v1 import (
     classes,
     classrooms,
     commissions,
+    dashboard,
     enrollments,
     reports,
     schedules,
@@ -34,4 +35,5 @@ api_router.include_router(classes.router)
 api_router.include_router(attendance.router)
 api_router.include_router(reports.router)
 api_router.include_router(audit.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(ws.router)
