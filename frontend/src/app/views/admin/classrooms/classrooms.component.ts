@@ -347,7 +347,7 @@ export class ClassroomsComponent implements OnInit {
     });
 
     const result = await firstValueFrom(ref.afterClosed());
-    if (result) {
+    if (result && !readonly) {
       await this.load();
     }
   }
