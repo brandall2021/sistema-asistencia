@@ -88,8 +88,6 @@ function toCareerPayload(values: Record<string, unknown>): Record<string, unknow
       (searchValueChange)="searchTerm = $event"
       [resultCount]="filteredItems.length"
       [activeFilters]="activeFilters"
-      [primaryAction]="primaryAction"
-      (primaryClick)="openCreate()"
       (clearFilters)="clearFilters()"
       (search)="searchTerm = $event"
     >

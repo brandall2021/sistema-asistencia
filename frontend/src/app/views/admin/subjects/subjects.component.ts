@@ -98,8 +98,6 @@ function toSubjectPayload(values: Record<string, unknown>): Record<string, unkno
       (searchValueChange)="searchTerm = $event"
       [resultCount]="filteredItems.length"
       [activeFilters]="activeFilters"
-      [primaryAction]="primaryAction"
-      (primaryClick)="openCreate()"
       (clearFilters)="clearFilters()"
       (search)="searchTerm = $event"
     >

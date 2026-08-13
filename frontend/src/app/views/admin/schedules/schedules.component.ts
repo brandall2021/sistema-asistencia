@@ -110,8 +110,6 @@ function toSchedulePayload(values: Record<string, unknown>): Record<string, unkn
       (searchValueChange)="searchTerm = $event"
       [resultCount]="filteredItems.length"
       [activeFilters]="activeFilters"
-      [primaryAction]="primaryAction"
-      (primaryClick)="openCreate()"
       (clearFilters)="clearFilters()"
       (search)="searchTerm = $event"
     >

@@ -109,8 +109,6 @@ function toEnrollmentPayload(values: Record<string, unknown>): Record<string, un
       (searchValueChange)="searchTerm = $event"
       [resultCount]="filteredItems.length"
       [activeFilters]="activeFilters"
-      [primaryAction]="primaryAction"
-      (primaryClick)="openCreate()"
       (clearFilters)="clearFilters()"
       (search)="searchTerm = $event"
     >
