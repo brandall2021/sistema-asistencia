@@ -1,0 +1,78 @@
+# ==========================================================================
+# Despliegue en Dokploy (docker compose)
+# ==========================================================================
+# - TLS/HTTPS y dominio: los resuelve el proxy inverso de Dokploy
+#   (Nginx Proxy Manager o el dominio adjunto al servicio).
+# - Los contenedores publican puertos en localhost para que el proxy
+#   pueda reenviarles tráfico; ajusta FRONTEND_PORT/BACKEND_PORT si chocan.
+# - Variables (se configuran en la UI de Dokploy):
+#   JWT_SECRET_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, CORS_ORIGINS,
+#   FRONTEND_PORT, BACKEND_PORT, POSTGRES_PASSWORD.
+# ==========================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: asistencia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asistencia}
+      POSTGRES_DB: asistencia
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asistencia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg2://asistencia:${POSTGRES_PASSWORD:-asistencia}@postgres:5432/asistencia
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-please-use-a-long-random-value}
+      QR_TOKEN_TTL_SECONDS: ${QR_TOKEN_TTL_SECONDS:-45}
+      GPS_MAX_ACCURACY: ${GPS_MAX_ACCURACY:-25}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://asistencia.tudominio.com}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@universidad.edu}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Administrador del Sistema}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dokploy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

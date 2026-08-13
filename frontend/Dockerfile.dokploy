@@ -1,0 +1,13 @@
+# Build stage
+FROM node:20-alpine AS build
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build -- --configuration=production
+
+# Runtime stage (para Dokploy: solo HTTP, el TLS lo resuelve el proxy de Dokploy)
+FROM nginx:1.27-alpine
+COPY --from=build /build/dist/frontend/browser /usr/share/nginx/html
+COPY nginx.dokploy.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

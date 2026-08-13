@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases (local dev)
+backend/*.db
+backend/*.sqlite3
+backend/test.db
+backend/alembic/*.pyc
+
+# Node / Angular
+node_modules/
+dist/
+.tmp/
+
+# Env & secrets
+.env
+backend/.env
+
+# TLS certs
+certs/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
