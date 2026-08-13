@@ -1,125 +1,332 @@
-import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { MatTableModule } from '@angular/material/table';
+import { Component, OnInit, TemplateRef, ViewChild } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatCardModule } from '@angular/material/card';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatSelectModule } from '@angular/material/select';
 import { ApiService } from '../../../core/services/api.service';
 import { Career } from '../../../core/models';
+import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { ErrorStateComponent } from '../../../shared/components/error-state/error-state.component';
+import { FilterBarComponent } from '../../../shared/components/filter-bar/filter-bar.component';
+import { FormDialogComponent } from '../../../shared/forms/form-dialog.component';
+import { FieldConfig } from '../../../shared/forms/form-fields';
+import { LoadingSkeletonComponent } from '../../../shared/components/loading-skeleton/loading-skeleton.component';
+import { PageAction, PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { ResponsiveTableComponent, TableColumn } from '../../../shared/components/responsive-table/responsive-table.component';
 import { Toast } from '../../../shared/toast';
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function initialFor(name: string): string {
+  return (name.trim().charAt(0) || 'C').toUpperCase();
+}
+
+function careerFields(): FieldConfig[] {
+  return [
+    { key: 'name', label: 'Nombre', type: 'text', required: true, width: 'half' },
+    { key: 'code', label: 'Código', type: 'text', required: true, width: 'half' },
+    { key: 'description', label: 'Descripción', type: 'textarea', width: 'full' },
+    { key: 'active', label: 'Activa', type: 'checkbox', width: 'full' },
+  ];
+}
+
+function toCareerPayload(values: Record<string, unknown>): Record<string, unknown> {
+  const description = String(values['description'] ?? '').trim();
+  return {
+    name: String(values['name'] ?? '').trim(),
+    code: String(values['code'] ?? '').trim(),
+    description: description || undefined,
+    active: !!values['active'],
+  };
+}
 
 @Component({
   selector: 'app-careers',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule,
-    MatFormFieldModule, MatInputModule, MatCheckboxModule, MatCardModule, MatProgressSpinnerModule,
+    CommonModule,
+    MatButtonModule,
+    MatDialogModule,
+    MatFormFieldModule,
+    MatIconModule,
+    MatMenuModule,
+    MatSelectModule,
+    PageHeaderComponent,
+    FilterBarComponent,
+    ResponsiveTableComponent,
+    LoadingSkeletonComponent,
+    EmptyStateComponent,
+    ErrorStateComponent,
   ],
   template: `
-    <mat-card>
-      <mat-card-header>
-        <mat-card-title>Carreras</mat-card-title>
-        <mat-card-subtitle>Gestión de carreras de la institución</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div class="toolbar">
-          <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Nueva carrera</button>
+    <app-page-header
+      title="Carreras"
+      subtitle="Gestión breve de carreras de la institución"
+      icon="school"
+      [primaryAction]="primaryAction"
+      (primaryClick)="openCreate()"
+    ></app-page-header>
+
+    <app-filter-bar
+      searchPlaceholder="Buscar por nombre, código o descripción"
+      [searchValue]="searchTerm"
+      (searchValueChange)="searchTerm = $event"
+      [resultCount]="filteredItems.length"
+      [activeFilters]="activeFilters"
+      [primaryAction]="primaryAction"
+      (primaryClick)="openCreate()"
+      (clearFilters)="clearFilters()"
+      (search)="searchTerm = $event"
+    >
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Estado</mat-label>
+        <mat-select [(value)]="statusFilter">
+          <mat-option value="all">Todos</mat-option>
+          <mat-option value="active">Activas</mat-option>
+          <mat-option value="inactive">Inactivas</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </app-filter-bar>
+
+    @if (loading) {
+      <app-loading-skeleton variant="table" [rows]="5"></app-loading-skeleton>
+    } @else if (loadError) {
+      <app-error-state [message]="loadError" (retry)="load()"></app-error-state>
+    } @else {
+      @if (!filteredItems.length) {
+        <app-empty-state [title]="emptyTitle" [message]="emptyMessage" [actionLabel]="emptyActionLabel" (action)="emptyAction()"></app-empty-state>
+      } @else {
+        <app-responsive-table [columns]="columns" [data]="filteredItems" [actionsTemplate]="actionsTpl"></app-responsive-table>
+      }
+    }
+
+    <ng-template #nameTpl let-row>
+      <div class="entity-cell">
+        <div class="entity-avatar">{{ careerInitial(row) }}</div>
+        <div>
+          <div class="entity-title">{{ row.name }}</div>
+          <div class="entity-subtitle">{{ row.code }}</div>
         </div>
-        <form *ngIf="formVisible" (ngSubmit)="save()" class="form-grid">
-          <mat-form-field appearance="outline"><mat-label>Nombre</mat-label><input matInput [(ngModel)]="form.name" name="name" required /></mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>Código</mat-label><input matInput [(ngModel)]="form.code" name="code" required /></mat-form-field>
-          <mat-form-field appearance="outline" class="span2"><mat-label>Descripción</mat-label><input matInput [(ngModel)]="form.description" name="description" /></mat-form-field>
-          <mat-checkbox [(ngModel)]="form.active" name="active">Activa</mat-checkbox>
-          <div class="actions">
-            <button mat-raised-button color="primary" type="submit">{{ editingId ? 'Guardar' : 'Crear' }}</button>
-            <button mat-button type="button" (click)="cancel()">Cancelar</button>
-          </div>
-        </form>
-        <table mat-table [dataSource]="items" class="mat-elevation-z2">
-          <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Nombre</th><td mat-cell *matCellDef="let c">{{ c.name }}</td></ng-container>
-          <ng-container matColumnDef="code"><th mat-header-cell *matHeaderCellDef>Código</th><td mat-cell *matCellDef="let c">{{ c.code }}</td></ng-container>
-          <ng-container matColumnDef="description"><th mat-header-cell *matHeaderCellDef>Descripción</th><td mat-cell *matCellDef="let c">{{ c.description }}</td></ng-container>
-          <ng-container matColumnDef="active"><th mat-header-cell *matHeaderCellDef>Activa</th><td mat-cell *matCellDef="let c"><mat-icon [style.color]="c.active ? 'green' : 'red'">{{ c.active ? 'check_circle' : 'cancel' }}</mat-icon></td></ng-container>
-          <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef>Acciones</th><td mat-cell *matCellDef="let c">
-            <button mat-icon-button (click)="edit(c)"><mat-icon>edit</mat-icon></button>
-            <button mat-icon-button color="warn" (click)="remove(c)"><mat-icon>delete</mat-icon></button>
-          </td></ng-container>
-          <tr mat-header-row *matHeaderRowDef="columns"></tr>
-          <tr mat-row *matRowDef="let row; columns: columns"></tr>
-        </table>
-        <div *ngIf="loading" class="center"><mat-spinner diameter="32"></mat-spinner></div>
-      </mat-card-content>
-    </mat-card>
+      </div>
+    </ng-template>
+
+    <ng-template #statusTpl let-row>
+      <span class="status-chip" [class.is-active]="row.active">{{ row.active ? 'Activa' : 'Inactiva' }}</span>
+    </ng-template>
+
+    <ng-template #actionsTpl let-row>
+      <button mat-icon-button [matMenuTriggerFor]="rowMenu" aria-label="Acciones de carrera">
+        <mat-icon>more_vert</mat-icon>
+      </button>
+      <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openEdit(row)">
+          <mat-icon>edit</mat-icon>
+          <span>Editar</span>
+        </button>
+        <button mat-menu-item class="danger-action" (click)="remove(row)">
+          <mat-icon>delete</mat-icon>
+          <span>Eliminar</span>
+        </button>
+      </mat-menu>
+    </ng-template>
   `,
-  styles: `.toolbar { margin: 16px 0; } .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; } .span2 { grid-column: span 2; } .actions { display: flex; align-items: center; gap: 8px; } table { width: 100%; } .center { display: flex; justify-content: center; padding: 24px; }`,
+  styles: `
+    .entity-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .entity-avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      background: var(--color-primary-50);
+      color: var(--color-primary-700);
+      font-weight: 700;
+      flex: none;
+    }
+    .entity-title {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .entity-subtitle {
+      font-size: var(--fs-caption);
+      color: var(--text-secondary);
+    }
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--surface-muted);
+      color: var(--text-secondary);
+      font-size: var(--fs-caption);
+      font-weight: 600;
+    }
+    .status-chip.is-active {
+      background: rgba(16, 185, 129, 0.12);
+      color: #047857;
+    }
+    .danger-action {
+      color: var(--color-danger);
+    }
+  `,
 })
 export class CareersComponent implements OnInit {
-  items: Career[] = [];
-  columns = ['name', 'code', 'description', 'active', 'actions'];
-  loading = true;
-  formVisible = false;
-  editingId: string | null = null;
-  form: any = { name: '', code: '', description: '', active: true };
+  @ViewChild('nameTpl', { static: true }) nameTpl!: TemplateRef<unknown>;
+  @ViewChild('statusTpl', { static: true }) statusTpl!: TemplateRef<unknown>;
+  @ViewChild('actionsTpl', { static: true }) actionsTpl!: TemplateRef<unknown>;
 
-  constructor(private api: ApiService, private toast: Toast) {}
+  items: Career[] = [];
+  columns: TableColumn[] = [];
+  loading = true;
+  loadError = '';
+  searchTerm = '';
+  statusFilter: 'all' | 'active' | 'inactive' = 'all';
+  primaryAction: PageAction = { label: 'Nueva carrera', icon: 'add', type: 'flat', color: 'primary' };
+
+  constructor(
+    private api: ApiService,
+    private toast: Toast,
+    private dialog: MatDialog,
+    private confirmDialog: ConfirmDialogService,
+  ) {}
 
   ngOnInit(): void {
+    this.columns = [
+      { key: 'name', header: 'Carrera', template: this.nameTpl, mobilePrimary: true },
+      { key: 'code', header: 'Código', accessor: (row) => String((row as Career).code) },
+      { key: 'description', header: 'Descripción', accessor: (row) => (row as Career).description ?? 'Sin descripción' },
+      { key: 'active', header: 'Estado', template: this.statusTpl },
+    ];
     this.load();
   }
 
   async load(): Promise<void> {
     this.loading = true;
+    this.loadError = '';
     try {
       this.items = await this.api.get<Career[]>('/careers');
-    } catch {
-      this.toast.error('No se pudieron cargar las carreras');
+    } catch (error: any) {
+      this.loadError = error?.error?.detail || 'No se pudieron cargar las carreras';
     } finally {
       this.loading = false;
     }
   }
 
-  openCreate(): void {
-    this.editingId = null;
-    this.form = { name: '', code: '', description: '', active: true };
-    this.formVisible = true;
+  get filteredItems(): Career[] {
+    const search = normalizeText(this.searchTerm);
+    return this.items.filter((item) => {
+      const matchesSearch = !search || [item.name, item.code, item.description, item.active ? 'activa' : 'inactiva'].some((value) => normalizeText(value).includes(search));
+      const matchesStatus = this.statusFilter === 'all' || (this.statusFilter === 'active' ? item.active : !item.active);
+      return matchesSearch && matchesStatus;
+    });
   }
 
-  edit(c: Career): void {
-    this.editingId = c.id;
-    this.form = { name: c.name, code: c.code, description: c.description, active: c.active };
-    this.formVisible = true;
+  get activeFilters(): number {
+    return Number(this.searchTerm.trim().length > 0) + Number(this.statusFilter !== 'all');
   }
 
-  cancel(): void {
-    this.formVisible = false;
-    this.editingId = null;
+  get emptyTitle(): string {
+    return this.items.length ? 'Sin coincidencias' : 'Todavía no hay carreras';
   }
 
-  async save(): Promise<void> {
-    try {
-      if (this.editingId) {
-        await this.api.patch(`/careers/${this.editingId}`, this.form);
-        this.toast.success('Carrera actualizada');
-      } else {
-        await this.api.post('/careers', this.form);
-        this.toast.success('Carrera creada');
-      }
-      this.cancel();
+  get emptyMessage(): string {
+    return this.items.length
+      ? 'Prueba con otros filtros o limpia la búsqueda.'
+      : 'Crea la primera carrera para empezar a usar el listado.';
+  }
+
+  get emptyActionLabel(): string {
+    return this.activeFilters ? 'Limpiar filtros' : 'Nueva carrera';
+  }
+
+  careerInitial(row: Career): string {
+    return initialFor(row.name);
+  }
+
+  clearFilters(): void {
+    this.searchTerm = '';
+    this.statusFilter = 'all';
+  }
+
+  emptyAction(): void {
+    if (this.activeFilters) {
+      this.clearFilters();
+      return;
+    }
+    void this.openCreate();
+  }
+
+  async openCreate(): Promise<void> {
+    await this.openDialog();
+  }
+
+  async openEdit(career: Career): Promise<void> {
+    await this.openDialog(career);
+  }
+
+  private async openDialog(career?: Career): Promise<void> {
+    const ref = this.dialog.open(FormDialogComponent, {
+      width: '680px',
+      maxWidth: '95vw',
+      data: {
+        title: career ? 'Editar carrera' : 'Nueva carrera',
+        subtitle: 'Completa los datos breves de la carrera',
+        icon: 'school',
+        fields: careerFields(),
+        values: career
+          ? { name: career.name, code: career.code, description: career.description ?? '', active: career.active }
+          : { name: '', code: '', description: '', active: true },
+        submitLabel: career ? 'Guardar cambios' : 'Crear carrera',
+        submit: async (values: Record<string, unknown>) => {
+          const payload = toCareerPayload(values);
+          if (career) {
+            await this.api.patch(`/careers/${career.id}`, payload);
+            this.toast.success('Carrera actualizada');
+          } else {
+            await this.api.post('/careers', payload);
+            this.toast.success('Carrera creada');
+          }
+        },
+      },
+    });
+
+    const result = await firstValueFrom(ref.afterClosed());
+    if (result) {
       await this.load();
-    } catch (e: any) {
-      this.toast.error(e?.error?.detail || 'Error al guardar');
     }
   }
 
-  async remove(c: Career): Promise<void> {
-    if (!confirm(`¿Eliminar la carrera ${c.name}?`)) return;
+  async remove(career: Career): Promise<void> {
+    const confirmed = await firstValueFrom(
+      this.confirmDialog.openConfirm({
+        title: 'Eliminar carrera',
+        message: `¿Eliminar la carrera "${career.name}"? Esta acción no se puede deshacer.`,
+        confirmLabel: 'Eliminar',
+        destructive: true,
+        confirmIcon: 'delete',
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
     try {
-      await this.api.delete(`/careers/${c.id}`);
+      await this.api.delete(`/careers/${career.id}`);
       this.toast.success('Carrera eliminada');
       await this.load();
     } catch (e: any) {
