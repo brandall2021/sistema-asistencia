@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -13,7 +13,6 @@ import {
   ReportFilters,
   SeriesData,
 } from '../../../core/services/dashboard.service';
-import { Career, Commission, Subject } from '../../../core/models';
 import { Toast } from '../../../shared/toast';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { FilterBarComponent } from '../../../shared/components/filter-bar/filter-bar.component';
@@ -25,9 +24,15 @@ import { StatusChipComponent } from '../../../shared/components/status-chip/stat
 
 const EMPTY_SERIES: SeriesData = { evolution: [], distribution: [] };
 
+interface FilterOption {
+  id: string;
+  name: string;
+}
+
 @Component({
   selector: 'app-reports',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     FormsModule,
@@ -50,6 +55,7 @@ const EMPTY_SERIES: SeriesData = { evolution: [], distribution: [] };
         title="Reportes"
         subtitle="Asistencia, riesgo y exportación por carrera, materia, comisión y rango de fechas."
         icon="bar_chart"
+        [breadcrumbs]="breadcrumbs"
         [secondaryActions]="headerActions"
         (actionClick)="onHeaderAction($event)"
       ></app-page-header>
@@ -69,7 +75,7 @@ const EMPTY_SERIES: SeriesData = { evolution: [], distribution: [] };
           <mat-select [(ngModel)]="selectedCareerId" (ngModelChange)="onCareerChange($event)">
             <mat-option value="">Todas</mat-option>
             @for (career of careers; track career.id) {
-              <mat-option [value]="career.id">{{ career.name }} ({{ career.code }})</mat-option>
+              <mat-option [value]="career.id">{{ career.name }}</mat-option>
             }
           </mat-select>
         </mat-form-field>
@@ -79,7 +85,7 @@ const EMPTY_SERIES: SeriesData = { evolution: [], distribution: [] };
           <mat-select [(ngModel)]="selectedSubjectId" (ngModelChange)="onSubjectChange($event)">
             <mat-option value="">Todas</mat-option>
             @for (subject of availableSubjects; track subject.id) {
-              <mat-option [value]="subject.id">{{ subject.name }} · {{ subject.career_name }}</mat-option>
+              <mat-option [value]="subject.id">{{ subject.name }}</mat-option>
             }
           </mat-select>
         </mat-form-field>
@@ -89,7 +95,7 @@ const EMPTY_SERIES: SeriesData = { evolution: [], distribution: [] };
           <mat-select [(ngModel)]="selectedCommissionId">
             <mat-option value="">Todas</mat-option>
             @for (commission of availableCommissions; track commission.id) {
-              <mat-option [value]="commission.id">{{ commission.name }} · {{ commission.subject_name }} · {{ commission.career_name }}</mat-option>
+              <mat-option [value]="commission.id">{{ commission.name }}</mat-option>
             }
           </mat-select>
         </mat-form-field>
@@ -431,9 +437,15 @@ const EMPTY_SERIES: SeriesData = { evolution: [], distribution: [] };
   `,
 })
 export class ReportsComponent implements OnInit {
-  careers: Career[] = [];
-  subjects: Subject[] = [];
-  commissions: Commission[] = [];
+  careers: FilterOption[] = [];
+  subjects: FilterOption[] = [];
+  commissions: FilterOption[] = [];
+
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Administración' },
+    { label: 'Reportes' },
+  ];
 
   selectedCareerId = '';
   selectedSubjectId = '';
@@ -483,23 +495,12 @@ export class ReportsComponent implements OnInit {
     return count;
   }
 
-  get availableSubjects(): Subject[] {
-    if (!this.selectedCareerId) {
-      return this.subjects;
-    }
-    return this.subjects.filter((subject) => subject.career_id === this.selectedCareerId);
+  get availableSubjects(): FilterOption[] {
+    return this.subjects;
   }
 
-  get availableCommissions(): Commission[] {
-    return this.commissions.filter((commission) => {
-      if (this.selectedCareerId && commission.career_id !== this.selectedCareerId) {
-        return false;
-      }
-      if (this.selectedSubjectId && commission.subject_id !== this.selectedSubjectId) {
-        return false;
-      }
-      return true;
-    });
+  get availableCommissions(): FilterOption[] {
+    return this.commissions;
   }
 
   get filteredLowAttendance(): AttendanceReportItem[] {
@@ -550,19 +551,10 @@ export class ReportsComponent implements OnInit {
 
   async onCareerChange(value: string): Promise<void> {
     this.selectedCareerId = value;
-    if (this.selectedSubjectId && !this.availableSubjects.some((subject) => subject.id === this.selectedSubjectId)) {
-      this.selectedSubjectId = '';
-    }
-    if (this.selectedCommissionId && !this.availableCommissions.some((commission) => commission.id === this.selectedCommissionId)) {
-      this.selectedCommissionId = '';
-    }
   }
 
   async onSubjectChange(value: string): Promise<void> {
     this.selectedSubjectId = value;
-    if (this.selectedCommissionId && !this.availableCommissions.some((commission) => commission.id === this.selectedCommissionId)) {
-      this.selectedCommissionId = '';
-    }
   }
 
   async applyFilters(): Promise<void> {
@@ -689,25 +681,28 @@ export class ReportsComponent implements OnInit {
     this.series = series;
   }
 
-  private async loadCareers(): Promise<Career[]> {
+  private async loadCareers(): Promise<FilterOption[]> {
     try {
-      return await this.api.get<Career[]>('/careers');
+      const rows = await this.api.get<Array<{ key: string; label: string | null }>>('/reports/attendance', { dimension: 'career' });
+      return rows.map((row) => ({ id: row.key, name: row.label || 'Sin nombre' }));
     } catch {
       return [];
     }
   }
 
-  private async loadSubjects(): Promise<Subject[]> {
+  private async loadSubjects(): Promise<FilterOption[]> {
     try {
-      return await this.api.get<Subject[]>('/subjects');
+      const rows = await this.api.get<Array<{ key: string; label: string | null }>>('/reports/attendance', { dimension: 'subject' });
+      return rows.map((row) => ({ id: row.key, name: row.label || 'Sin nombre' }));
     } catch {
       return [];
     }
   }
 
-  private async loadCommissions(): Promise<Commission[]> {
+  private async loadCommissions(): Promise<FilterOption[]> {
     try {
-      return await this.api.get<Commission[]>('/commissions');
+      const rows = await this.api.get<Array<{ key: string; label: string | null }>>('/reports/attendance', { dimension: 'commission' });
+      return rows.map((row) => ({ id: row.key, name: row.label || 'Sin nombre' }));
     } catch {
       return [];
     }
