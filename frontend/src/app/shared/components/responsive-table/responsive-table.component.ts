@@ -115,7 +115,7 @@ export interface TableColumn {
           </tr>
 
           <tr *ngIf="!loading && total === 0" class="mat-mdc-row">
-            <td class="mat-mdc-cell empty-cell">
+            <td class="mat-mdc-cell empty-cell" [attr.colspan]="displayedColumns.length">
               <app-empty-state [title]="emptyTitle" [message]="emptyMessage"></app-empty-state>
             </td>
           </tr>
