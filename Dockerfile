@@ -37,8 +37,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/nginx/sites-enabled/default
 
-# Backend (código + dependencias de la etapa 2)
+# Backend (código + dependencias de la etapa 2, incluidos binarios como alembic/uvicorn)
 COPY --from=backend-deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=backend-deps /usr/local/bin/uvicorn /usr/local/bin/alembic /usr/local/bin/
 WORKDIR /opt/backend
 COPY backend/ .
 
