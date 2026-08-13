@@ -1,0 +1,43 @@
+@use '@angular/material' as mat;
+
+$brand: (
+  0: #000000, 10: #1b1b3a, 20: #312e81, 25: #3b3796, 30: #4338ca, 35: #5147d8,
+  40: #4f46e5, 50: #6d63f0, 60: #8b84f6, 70: #a9a4fb, 80: #c7c3fd, 90: #e4e1ff,
+  95: #f1efff, 98: #faf9ff, 99: #fefbff, 100: #ffffff,
+);
+
+$accent: (
+  0: #000000, 10: #04303f, 20: #065c74, 25: #07698a, 30: #0369a1, 40: #0284c7,
+  50: #38bdf8, 60: #7dd3fc, 70: #bae6fd, 80: #dbeafe, 90: #eff6ff, 95: #f5faff,
+  98: #fbfeff, 99: #feffff, 100: #ffffff,
+);
+
+html {
+  @include mat.theme((
+    color: (theme-type: light, primary: $brand, tertiary: $accent),
+    typography: Roboto,
+    density: 0,
+  ));
+  color-scheme: light;
+  --mat-sys-surface: var(--surface-page);
+  --mat-sys-surface-container-low: var(--surface-card);
+  --mat-sys-surface-container: var(--surface-card);
+  --mat-sys-on-surface: var(--text-primary);
+  --mat-sys-on-surface-variant: var(--text-secondary);
+  --mat-sys-outline-variant: var(--border-color);
+}
+
+[data-theme='dark'] {
+  @include mat.theme((
+    color: (theme-type: dark, primary: $brand, tertiary: $accent),
+    typography: Roboto,
+    density: 0,
+  ));
+  color-scheme: dark;
+  --mat-sys-surface: var(--surface-page);
+  --mat-sys-surface-container-low: var(--surface-card);
+  --mat-sys-surface-container: var(--surface-card);
+  --mat-sys-on-surface: var(--text-primary);
+  --mat-sys-on-surface-variant: var(--text-secondary);
+  --mat-sys-outline-variant: var(--border-color);
+}
