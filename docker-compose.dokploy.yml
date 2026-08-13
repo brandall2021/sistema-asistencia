@@ -5,9 +5,12 @@
 #   (Nginx Proxy Manager o el dominio adjunto al servicio).
 # - Los contenedores publican puertos en localhost para que el proxy
 #   pueda reenviarles tráfico; ajusta FRONTEND_PORT/BACKEND_PORT si chocan.
-# - Variables (se configuran en la UI de Dokploy):
-#   JWT_SECRET_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, CORS_ORIGINS,
-#   FRONTEND_PORT, BACKEND_PORT, POSTGRES_PASSWORD.
+# - Variables obligatorias (se configuran en la UI de Dokploy):
+#   POSTGRES_PASSWORD, JWT_SECRET_KEY (>= 32 bytes), ADMIN_PASSWORD,
+#   CORS_ORIGINS (sin localhost ni comodines).
+# - Opcionales: QR_TOKEN_TTL_SECONDS, GPS_MAX_ACCURACY, ADMIN_EMAIL,
+#   ADMIN_USERNAME, ADMIN_FULL_NAME, FRONTEND_PORT, BACKEND_PORT,
+#   TRUSTED_PROXIES.
 # ==========================================================================
 
 services:
@@ -15,7 +18,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: asistencia
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asistencia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
       POSTGRES_DB: asistencia
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -44,16 +47,18 @@ services:
     environment:
       APP_ENV: production
       DEBUG: "false"
-      DATABASE_URL: postgresql+psycopg2://asistencia:${POSTGRES_PASSWORD:-asistencia}@postgres:5432/asistencia
+      DATABASE_URL: postgresql+psycopg2://asistencia:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}@postgres:5432/asistencia
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-please-use-a-long-random-value}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY es obligatorio (mínimo 32 bytes)}
       QR_TOKEN_TTL_SECONDS: ${QR_TOKEN_TTL_SECONDS:-45}
       GPS_MAX_ACCURACY: ${GPS_MAX_ACCURACY:-25}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://asistencia.tudominio.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS es obligatorio (sin localhost ni comodines)}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@universidad.edu}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD es obligatorio (no usar el valor por defecto)}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Administrador del Sistema}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      REFRESH_COOKIE_SECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy

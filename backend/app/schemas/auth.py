@@ -9,7 +9,19 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = Field(
+        default=None,
+        description="Puede omitirse si se envía en la cookie HttpOnly",
+    )
+
+
+class WSTicketRequest(BaseModel):
+    class_id: str
+
+
+class WSTicketResponse(BaseModel):
+    ticket: str
+    expires_in: int
 
 
 class TokenResponse(BaseModel):

@@ -1,3 +1,4 @@
+import ipaddress
 from collections.abc import Callable
 from typing import Annotated
 
@@ -98,13 +99,41 @@ def get_current_teacher(db: DbDep, user: CurrentUser) -> Teacher:
 CurrentTeacher = Annotated[Teacher, Depends(get_current_teacher)]
 
 
+_TRUSTED_CIDRS = []
+for _entry in settings.trusted_proxy_list:
+    try:
+        _TRUSTED_CIDRS.append(ipaddress.ip_network(_entry, strict=False))
+    except ValueError:
+        pass
+
+
+def _is_trusted_proxy(peer: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(ip in net for net in _TRUSTED_CIDRS)
+
+
+def _client_ip(request: Request) -> str:
+    """IP del cliente para rate limiting.
+
+    ``X-Forwarded-For`` solo se acepta si la conexión directa proviene de un
+    proxy incluido en ``TRUSTED_PROXIES``; en otro caso se usa
+    ``request.client.host``, de modo que un cliente no puede evadir el límite
+    cambiando la cabecera arbitrariamente.
+    """
+    peer = request.client.host if request.client else "unknown"
+    if _is_trusted_proxy(peer):
+        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return peer
+
+
 def rate_limit(key_prefix: str, limit: int, period: int) -> Callable:
     def _limiter(request: Request) -> None:
-        client_ip = (
-            request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-            or request.client.host
-        )
-        key = f"rl:{key_prefix}:{client_ip}"
+        key = f"rl:{key_prefix}:{_client_ip(request)}"
         if not rate_limiter.allow(key, limit, period):
             raise HTTPException(status_code=429, detail="Demasiadas solicitudes. Intente más tarde")
 

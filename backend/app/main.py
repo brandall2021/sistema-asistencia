@@ -11,6 +11,8 @@ from app.db.seed import seed
 from app.db.session import SessionLocal, engine
 import app.models  # noqa: F401
 
+settings.validate_production()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

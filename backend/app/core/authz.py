@@ -62,7 +62,7 @@ def can_access_class(db: Session, actor: User, cls: ClassSession) -> bool:
     """ADMIN/AUDITOR acceden a todo; DOCENTE/ALUMNO solo a lo propio."""
     if actor.has_role(RoleName.ADMIN, RoleName.AUDITOR):
         return True
-    return cls.commission_id in commission_ids_for_user(db, actor)
+    return str(cls.commission_id) in commission_ids_for_user(db, actor)
 
 
 def can_manage_class(db: Session, actor: User, cls: ClassSession) -> bool:

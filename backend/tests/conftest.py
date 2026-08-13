@@ -23,7 +23,7 @@ from app.main import app  # noqa: E402
 from app.models import *  # noqa: E402,F401,F403
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def client():
     with TestClient(app) as c:
         yield c

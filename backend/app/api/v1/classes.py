@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
 from app.core.audit import audit
-from app.core.authz import can_manage_class, commission_ids_for_user
+from app.core.authz import can_access_class, can_manage_class, commission_ids_for_user
 from app.core.deps import CurrentUser, DbDep, get_teacher_profile, require_roles
 from app.models.academic import Commission
 from app.models.attendance import Attendance
@@ -108,8 +108,7 @@ def create_class(payload: ClassCreate, request: Request, db: DbDep, actor: User 
 @router.get("/{class_id}", response_model=ClassOut)
 def get_class(class_id: str, db: DbDep, actor: User = Depends(Anyone)):
     cls = _get_class(db, class_id)
-    ids = commission_ids_for_user(db, actor)
-    if actor.has_role(RoleName.ADMIN) or cls.commission_id in ids:
+    if can_access_class(db, actor, cls):
         return _with_counts(db, cls)
     raise HTTPException(status_code=403, detail="No tiene acceso a esta clase")
 
