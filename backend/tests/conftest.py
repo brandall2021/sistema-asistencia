@@ -33,9 +33,11 @@ def client():
 def _clean_db():
     """Limpia la base de datos después de cada test y re-siembra el admin."""
     yield
+    from app.core.rate_limit import rate_limiter
     from app.db.base import Base
     from app.db.seed import seed
     from app.db.session import SessionLocal
+    rate_limiter.clear()
     with SessionLocal() as db:
         for table in reversed(Base.metadata.sorted_tables):
             db.execute(table.delete())

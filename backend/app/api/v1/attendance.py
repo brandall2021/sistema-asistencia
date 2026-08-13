@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
 from app.core.audit import audit
+from app.core.authz import can_manage_class, commission_ids_for_user
 from app.core.deps import CurrentStudent, CurrentUser, DbDep, require_roles
 from app.models.attendance import Attendance, Justification
+from app.models.class_entity import ClassSession
+from app.models.enrollment import Enrollment
 from app.models.user import User
 from app.models.enums import AttendanceStatus, JustificationStatus, RoleName
 from app.schemas.attendance import (
@@ -76,10 +79,15 @@ def my_attendance(db: DbDep, student: CurrentStudent, page: int = 1, page_size: 
 def class_attendance_paged(
     class_id: str,
     db: DbDep,
-    _actor: User = Depends(Staff),
+    actor: User = Depends(Staff),
     page: int = 1,
     page_size: int = 100,
 ):
+    cls = db.get(ClassSession, class_id)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="Clase no encontrada")
+    if not can_manage_class(db, actor, cls):
+        raise HTTPException(status_code=403, detail="No tiene permisos sobre esta clase")
     query = select(Attendance).where(Attendance.class_id == class_id)
     total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
     rows = db.execute(
@@ -102,14 +110,12 @@ def update_attendance_status(
     db: DbDep,
     actor: User = Depends(Staff),
 ):
-    from app.models.class_entity import ClassSession
     record = db.get(Attendance, attendance_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Asistencia no encontrada")
     cls = db.get(ClassSession, record.class_id)
-    if not actor.has_role(RoleName.ADMIN):
-        if cls is None or cls.teacher_id != actor.id:
-            raise HTTPException(status_code=403, detail="No tiene permisos sobre esta asistencia")
+    if cls is None or not can_manage_class(db, actor, cls):
+        raise HTTPException(status_code=403, detail="No tiene permisos sobre esta asistencia")
     record = attendance_service.change_status(
         db, attendance_id, payload.status, actor, payload.review_reason
     )
@@ -138,12 +144,19 @@ def create_justification(
 @router.get("/justifications", response_model=Page)
 def list_justifications(
     db: DbDep,
-    _actor: User = Depends(Staff),
+    actor: User = Depends(Staff),
     status: JustificationStatus | None = None,
     page: int = 1,
     page_size: int = 20,
 ):
     query = select(Justification)
+    if not actor.has_role(RoleName.ADMIN):
+        ids = commission_ids_for_user(db, actor)
+        query = (
+            query.join(Attendance, Justification.attendance_id == Attendance.id)
+            .join(ClassSession, Attendance.class_id == ClassSession.id)
+            .where(ClassSession.commission_id.in_(ids))
+        )
     if status:
         query = query.where(Justification.status == status.value)
     total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
@@ -178,6 +191,12 @@ def review_justification(
     db: DbDep,
     actor: User = Depends(Staff),
 ):
+    just = db.get(Justification, justification_id)
+    if just is None:
+        raise HTTPException(status_code=404, detail="Justificación no encontrada")
+    cls = db.get(ClassSession, just.attendance.class_id) if just.attendance else None
+    if not actor.has_role(RoleName.ADMIN) and (cls is None or not can_manage_class(db, actor, cls)):
+        raise HTTPException(status_code=403, detail="No tiene permisos sobre esta justificación")
     just = attendance_service.review_justification(
         db, justification_id, payload.status, actor, payload.review_notes
     )

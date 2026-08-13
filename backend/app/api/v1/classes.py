@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
 from app.core.audit import audit
-from app.core.deps import CurrentUser, DbDep, require_roles
+from app.core.authz import can_manage_class, commission_ids_for_user
+from app.core.deps import CurrentUser, DbDep, get_teacher_profile, require_roles
 from app.models.academic import Commission
 from app.models.attendance import Attendance
 from app.models.class_entity import ClassSession
@@ -26,20 +27,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _commission_ids_for_user(db, actor: CurrentUser) -> list[str]:
-    if actor.has_role(RoleName.ADMIN):
-        return []
-    if actor.has_role(RoleName.DOCENTE):
-        return [str(c.id) for c in db.execute(
-            select(Commission).where(Commission.teacher_id == actor.id)).scalars()]
-    if actor.has_role(RoleName.ALUMNO):
-        return [str(e.commission_id) for e in db.execute(
-            select(Enrollment).where(
-                Enrollment.student_id == actor.id, Enrollment.status == "ACTIVE"
-            )).scalars()]
-    return []
-
-
 def _get_class(db: DbDep, class_id: str) -> ClassSession:
     cls = db.get(ClassSession, class_id)
     if cls is None:
@@ -47,18 +34,9 @@ def _get_class(db: DbDep, class_id: str) -> ClassSession:
     return cls
 
 
-def _can_manage(db: DbDep, actor: CurrentUser, cls: ClassSession) -> bool:
-    if actor.has_role(RoleName.ADMIN):
-        return True
-    if actor.has_role(RoleName.DOCENTE):
-        commission = db.get(Commission, cls.commission_id)
-        return commission is not None and commission.teacher_id == actor.id
-    return False
-
-
 def _require_manageable(db: DbDep, actor: CurrentUser, class_id: str) -> ClassSession:
     cls = _get_class(db, class_id)
-    if not _can_manage(db, actor, cls):
+    if not can_manage_class(db, actor, cls):
         raise HTTPException(status_code=403, detail="No tiene permisos sobre esta clase")
     return cls
 
@@ -82,7 +60,7 @@ def list_classes(db: DbDep, actor: User = Depends(Anyone), commission_id: str | 
     if commission_id:
         query = query.where(ClassSession.commission_id == commission_id)
     else:
-        ids = _commission_ids_for_user(db, actor)
+        ids = commission_ids_for_user(db, actor)
         if ids:
             query = query.where(ClassSession.commission_id.in_(ids))
         elif not actor.has_role(RoleName.ADMIN):
@@ -96,7 +74,7 @@ def create_class(payload: ClassCreate, request: Request, db: DbDep, actor: User 
     commission = db.get(Commission, payload.commission_id)
     if commission is None:
         raise HTTPException(status_code=404, detail="Comisión no encontrada")
-    if not actor.has_role(RoleName.ADMIN) and commission.teacher_id != actor.id:
+    if not actor.has_role(RoleName.ADMIN) and commission.teacher_id != get_teacher_profile(db, actor).id:
         raise HTTPException(status_code=403, detail="No puede crear clases para esta comisión")
 
     classroom_id = payload.classroom_id
@@ -130,7 +108,7 @@ def create_class(payload: ClassCreate, request: Request, db: DbDep, actor: User 
 @router.get("/{class_id}", response_model=ClassOut)
 def get_class(class_id: str, db: DbDep, actor: User = Depends(Anyone)):
     cls = _get_class(db, class_id)
-    ids = _commission_ids_for_user(db, actor)
+    ids = commission_ids_for_user(db, actor)
     if actor.has_role(RoleName.ADMIN) or cls.commission_id in ids:
         return _with_counts(db, cls)
     raise HTTPException(status_code=403, detail="No tiene acceso a esta clase")

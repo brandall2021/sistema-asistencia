@@ -56,15 +56,34 @@ def require_roles(*roles: RoleName) -> Callable:
     return _checker
 
 
-def get_current_student(db: DbDep, user: CurrentUser) -> Student:
-    if not user.has_role(RoleName.ALUMNO):
-        raise HTTPException(status_code=403, detail="Se requiere perfil de alumno")
-    student = db.execute(
-        select(Student).where(Student.user_id == user.id)
-    ).scalar_one_or_none()
+def find_teacher_profile(db: Session, user: User) -> Teacher | None:
+    """Perfil Teacher asociado al usuario, o None si no existe."""
+    return db.execute(select(Teacher).where(Teacher.user_id == user.id)).scalar_one_or_none()
+
+
+def find_student_profile(db: Session, user: User) -> Student | None:
+    """Perfil Student asociado al usuario, o None si no existe."""
+    return db.execute(select(Student).where(Student.user_id == user.id)).scalar_one_or_none()
+
+
+def get_teacher_profile(db: Session, user: User) -> Teacher:
+    teacher = find_teacher_profile(db, user)
+    if teacher is None:
+        raise HTTPException(status_code=403, detail="El usuario no tiene perfil docente")
+    return teacher
+
+
+def get_student_profile(db: Session, user: User) -> Student:
+    student = find_student_profile(db, user)
     if student is None:
         raise HTTPException(status_code=403, detail="El usuario no tiene perfil de alumno")
     return student
+
+
+def get_current_student(db: DbDep, user: CurrentUser) -> Student:
+    if not user.has_role(RoleName.ALUMNO):
+        raise HTTPException(status_code=403, detail="Se requiere perfil de alumno")
+    return get_student_profile(db, user)
 
 
 CurrentStudent = Annotated[Student, Depends(get_current_student)]
@@ -73,12 +92,7 @@ CurrentStudent = Annotated[Student, Depends(get_current_student)]
 def get_current_teacher(db: DbDep, user: CurrentUser) -> Teacher:
     if not user.has_role(RoleName.DOCENTE):
         raise HTTPException(status_code=403, detail="Se requiere perfil de docente")
-    teacher = db.execute(
-        select(Teacher).where(Teacher.user_id == user.id)
-    ).scalar_one_or_none()
-    if teacher is None:
-        raise HTTPException(status_code=403, detail="El usuario no tiene perfil de docente")
-    return teacher
+    return get_teacher_profile(db, user)
 
 
 CurrentTeacher = Annotated[Teacher, Depends(get_current_teacher)]

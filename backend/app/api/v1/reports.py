@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, DbDep, require_roles
+from app.core.deps import CurrentUser, DbDep, find_teacher_profile, require_roles
 from app.models.academic import Career, Commission, Subject
 from app.models.attendance import Attendance
 from app.models.class_entity import ClassSession
 from app.models.enums import RoleName
 from app.models.student import Student
+from app.models.teacher import Teacher
 from app.models.user import User
 from app.schemas.report import AttendanceReportItem, SummaryReport
 
@@ -106,7 +107,10 @@ def _attendance_data(
 ) -> list[dict]:
     teacher_id = None
     if not actor.has_role(RoleName.ADMIN, RoleName.AUDITOR):
-        teacher_id = actor.id
+        teacher = find_teacher_profile(db, actor)
+        if teacher is None:
+            raise HTTPException(status_code=403, detail="El usuario no tiene perfil docente")
+        teacher_id = str(teacher.id)
 
     present, late, absent, justified, review = _aggs()
     if dimension == "student":

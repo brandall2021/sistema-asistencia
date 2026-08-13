@@ -60,5 +60,16 @@ class RateLimiter:
         with self._lock:
             self._mem.pop(key, None)
 
+    def clear(self) -> None:
+        """Borra todos los contadores (útil en tests para aislar cada caso)."""
+        if self._redis_ok:
+            try:
+                for key in self._redis.scan_iter("rl:*"):
+                    self._redis.delete(key)
+            except Exception:
+                self._redis_ok = False
+        with self._lock:
+            self._mem.clear()
+
 
 rate_limiter = RateLimiter()

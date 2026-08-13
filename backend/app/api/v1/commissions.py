@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import or_, select
 
 from app.core.audit import audit
-from app.core.deps import CurrentUser, DbDep, require_roles
+from app.core.deps import CurrentUser, DbDep, find_teacher_profile, require_roles
 from app.models.academic import Commission
 from app.models.user import User
 from app.models.enums import RoleName
@@ -18,8 +18,10 @@ def _scope(db: DbDep, actor: CurrentUser):
     """ADMIN ve todas; DOCENTE ve solo las propias (acceso horizontal)."""
     query = select(Commission).order_by(Commission.name)
     if not actor.has_role(RoleName.ADMIN):
-        teacher_id = str(actor.id)
-        query = query.where(Commission.teacher_id == teacher_id)
+        teacher = find_teacher_profile(db, actor)
+        if teacher is None:
+            return query.where(False)
+        query = query.where(Commission.teacher_id == teacher.id)
     return query
 
 
@@ -47,8 +49,10 @@ def get_commission(commission_id: str, db: DbDep, actor: User = Depends(require_
     commission = db.get(Commission, commission_id)
     if commission is None:
         raise HTTPException(status_code=404, detail="Comisión no encontrada")
-    if not actor.has_role(RoleName.ADMIN) and commission.teacher_id != actor.id:
-        raise HTTPException(status_code=403, detail="No tiene acceso a esta comisión")
+    if not actor.has_role(RoleName.ADMIN):
+        teacher = find_teacher_profile(db, actor)
+        if teacher is None or commission.teacher_id != teacher.id:
+            raise HTTPException(status_code=403, detail="No tiene acceso a esta comisión")
     return CommissionOut.from_commission(commission)
 
 

@@ -54,7 +54,6 @@ def create_teacher(payload: TeacherCreate, request: Request, db: DbDep, actor: U
     db.add(user)
     db.flush()
     teacher = Teacher(
-        id=user.id,
         user_id=user.id,
         employee_number=payload.employee_number,
         title=payload.title,

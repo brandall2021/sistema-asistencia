@@ -54,7 +54,6 @@ def create_student(payload: StudentCreate, request: Request, db: DbDep, actor: U
     db.add(user)
     db.flush()
     student = Student(
-        id=user.id,
         user_id=user.id,
         registration_number=payload.registration_number,
         dni=payload.dni,
