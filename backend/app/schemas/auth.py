@@ -16,7 +16,10 @@ class RefreshRequest(BaseModel):
 
 
 class WSTicketRequest(BaseModel):
-    class_id: str
+    class_id: str | None = Field(
+        default=None,
+        description="Si se omite, el ticket es para el canal personal de notificaciones",
+    )
 
 
 class WSTicketResponse(BaseModel):

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.audit import audit
 from app.core.authz import can_access_class, can_manage_class, commission_ids_for_user
@@ -11,11 +12,13 @@ from app.models.attendance import Attendance
 from app.models.class_entity import ClassSession
 from app.models.enrollment import Enrollment
 from app.models.enums import ClassStatus, RoleName
+from app.models.student import Student
 from app.models.user import User
 from app.schemas.attendance import AttendanceOut
 from app.schemas.class_ import ClassCreate, ClassOut, ClassUpdate
 from app.schemas.qr import QRResponse
 from app.services.qr import create_qr_session
+from app.services.ws import manager
 
 router = APIRouter(prefix="/classes", tags=["Clases"])
 
@@ -141,7 +144,30 @@ def start_class(class_id: str, request: Request, db: DbDep, actor: User = Depend
     audit(db, action="class_start", entity="class", entity_id=str(cls.id),
           user_id=str(actor.id), username=actor.username, request=request,
           details={"starts_at": cls.starts_at.isoformat()})
+    _notify_class_started(db, cls)
     return _with_counts(db, cls)
+
+
+def _notify_class_started(db: Session, cls: ClassSession) -> None:
+    """Notifica en vivo a los alumnos inscriptos en la comisión."""
+    students = db.execute(
+        select(Student)
+        .join(Enrollment, Enrollment.student_id == Student.id)
+        .where(
+            Enrollment.commission_id == cls.commission_id,
+            Enrollment.status == "ACTIVE",
+        )
+    ).scalars().all()
+    payload = {
+        "class_id": str(cls.id),
+        "title": cls.title,
+        "date": cls.date.isoformat(),
+        "starts_at": cls.starts_at.isoformat() if cls.starts_at else None,
+        "commission": cls.commission.name if cls.commission else "",
+        "subject": cls.commission.subject.name if cls.commission and cls.commission.subject else "",
+    }
+    for student in students:
+        manager.dispatch(manager.notify_user(str(student.user_id), "class-started", payload))
 
 
 @router.post("/{class_id}/finish", response_model=ClassOut)

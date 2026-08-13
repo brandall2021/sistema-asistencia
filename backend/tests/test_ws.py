@@ -64,3 +64,60 @@ def test_ws_teacher_not_owner_rejected(client, admin_headers, seed_data, active_
     with _open(client, f"/api/v1/ws/classes/{class2}?token={token}") as ws:
         ws.send_text("ping")
         assert ws.receive_json()["event"] == "pong"
+
+
+# ---------------------------------------------------------------------------
+# Canal personal de notificaciones (/ws/notifications)
+# ---------------------------------------------------------------------------
+
+def _personal_ticket(client, token: str) -> str:
+    r = client.post("/api/v1/auth/ws-ticket",
+                    headers={"Authorization": f"Bearer {token}"}, json={})
+    assert r.status_code == 200, r.text
+    return r.json()["ticket"]
+
+
+def test_ws_notifications_valid_personal_ticket(client, admin_token):
+    ticket = _personal_ticket(client, admin_token)
+    with _open(client, f"/api/v1/ws/notifications?ticket={ticket}") as ws:
+        ws.send_text("ping")
+        assert ws.receive_json()["event"] == "pong"
+
+
+def test_ws_notifications_requires_auth(client, seed_data):
+    _expect_error(client, "/api/v1/ws/notifications")
+
+
+def test_ws_notifications_rejects_class_ticket(client, admin_token, seed_data, active_class):
+    r = client.post("/api/v1/auth/ws-ticket",
+                    headers={"Authorization": f"Bearer {admin_token}"},
+                    json={"class_id": active_class})
+    assert r.status_code == 200
+    _expect_error(client, f"/api/v1/ws/notifications?ticket={r.json()['ticket']}")
+
+
+def test_ws_class_rejects_personal_ticket(client, admin_token, seed_data, active_class):
+    ticket = _personal_ticket(client, admin_token)
+    _expect_error(client, f"/api/v1/ws/classes/{active_class}?ticket={ticket}")
+
+
+def test_class_start_notifies_enrolled_student(client, admin_headers, seed_data):
+    r = client.post("/api/v1/classes", headers=admin_headers, json={
+        "commission_id": seed_data["commission_id"], "date": "2026-09-01"})
+    assert r.status_code == 201
+    class_id = r.json()["id"]
+
+    login = client.post("/api/v1/auth/login", json={
+        "identifier": "alumno@universidad.edu", "password": "Alumno123!"})
+    token = login.json()["access_token"]
+    ticket = _personal_ticket(client, token)
+
+    with _open(client, f"/api/v1/ws/notifications?ticket={ticket}") as ws:
+        ws.send_text("ping")
+        assert ws.receive_json()["event"] == "pong"
+        r = client.post(f"/api/v1/classes/{class_id}/start", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        ev = ws.receive_json()
+        assert ev["event"] == "class-started"
+        assert ev["data"]["class_id"] == class_id
+

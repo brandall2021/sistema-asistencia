@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { RoleName } from '../../core/models';
 
 interface MenuItem {
@@ -154,9 +155,14 @@ export class ShellComponent implements OnInit, OnDestroy {
   opened = true;
   private mobile = false;
 
-  constructor(private auth: AuthService, private bp: BreakpointObserver) {}
+  constructor(
+    private auth: AuthService,
+    private bp: BreakpointObserver,
+    private notifications: NotificationService,
+  ) {}
 
   ngOnInit(): void {
+    this.notifications.start();
     this.bp.observe(['(max-width: 900px)']).subscribe((state) => {
       this.mobile = state.matches;
       this.mode = this.mobile ? 'over' : 'side';

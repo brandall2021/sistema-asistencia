@@ -32,6 +32,9 @@ def _authorize(ticket: str | None, token: str | None, class_id: str) -> bool:
             return False
         user_id = payload.get("sub")
 
+    if not user_id:
+        return False
+
     with SessionLocal() as db:
         user = db.get(User, user_id)
         if user is None or not user.is_active:
@@ -66,6 +69,52 @@ def _authorize(ticket: str | None, token: str | None, class_id: str) -> bool:
             ).scalar_one_or_none()
             return enrollment is not None
         return False
+
+
+def _authorize_user(ticket: str | None, token: str | None) -> str | None:
+    """Autentica para el canal personal de notificaciones (ticket sin clase)."""
+    user_id: str | None = None
+    if ticket:
+        user_id = ticket_store.consume(ticket, None)
+    else:
+        if not token:
+            return None
+        try:
+            payload = decode_token(token, expected_type="access")
+        except pyjwt.PyJWTError:
+            return None
+        user_id = payload.get("sub")
+
+    if not user_id:
+        return None
+
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if user is None or not user.is_active:
+            return None
+        return str(user.id)
+
+
+@router.websocket("/ws/notifications")
+async def notifications_ws(
+    websocket: WebSocket,
+    ticket: str = Query(default=""),
+    token: str = Query(default=""),
+):
+    await websocket.accept()
+    user_id = _authorize_user(ticket or None, token or None)
+    if user_id is None:
+        await websocket.send_text(json.dumps({"event": "error", "detail": "NO_AUTORIZADO"}))
+        await websocket.close(code=4401)
+        return
+    await manager.subscribe_user(user_id, websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_text('{"event":"pong"}')
+    except WebSocketDisconnect:
+        await manager.disconnect_user(user_id, websocket)
 
 
 @router.websocket("/ws/classes/{class_id}")

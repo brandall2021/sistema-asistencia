@@ -235,16 +235,19 @@ El resumen está acotado al alcance del usuario: ADMIN/AUDITOR ven todo, DOCENTE
 ## WebSocket en tiempo real
 
 - **Se obtiene un ticket de un solo uso**: `POST /auth/ws-ticket` (Bearer access) → `{"ticket": "...", "expires_in": 30}`.
-- **URL**: `wss://<host>/api/v1/ws/classes/{class_id}?ticket=<ticket>` — el access token **no viaja en la URL**.
-- El ticket: expira en 30 s (configurable), es de un solo uso, está asociado al usuario y a la clase, y se guarda en Redis (con fallback en memoria).
+- **URL (canal de clase)**: `wss://<host>/api/v1/ws/classes/{class_id}?ticket=<ticket>` — el access token **no viaja en la URL**.
+- **URL (canal personal de notificaciones)**: `wss://<host>/api/v1/ws/notifications?ticket=<ticket>` — el ticket se pide a `/auth/ws-ticket` **sin** `class_id`.
+- El ticket: expira en 30 s (configurable), es de un solo uso, está asociado al usuario (y a la clase si se pidió con `class_id`), y se guarda en Redis (con fallback en memoria).
 - Por compatibilidad se acepta aún `?token=<access_token>` (deprecado).
 - El docente abre el canal al iniciar la clase y ve las asistencias **en vivo**.
 - Mensajes del cliente: `{"event": "ping"}`.
 - Respuestas del servidor:
   - `{"event": "pong"}` para pings de mantenimiento.
-  - `{"event": "checkin", "attendance": {...}}` cuando un alumno hace check-in.
+  - `{"event": "checkin", "data": {...}}` en el canal de la clase cuando un alumno hace check-in.
+  - `{"event": "class-started", "data": {...}}` en el canal personal de cada alumno inscripto cuando su clase comienza.
+  - `{"event": "checkin_confirmed", "data": {...}}` en el canal personal del alumno tras registrar asistencia.
   - `{"event": "error", "detail": "..."}` si la conexión no está autorizada (se cierra con `4401`).
-- El frontend reconecta automáticamente ante caídas (backoff).
+- El frontend reconecta automáticamente ante caídas (backoff) renovando el ticket y muestra avisos en vivo vía snackbar.
 
 ---
 

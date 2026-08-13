@@ -231,9 +231,9 @@ export interface Page<T> {
 }
 
 export interface WSEvent {
-  event: 'pong' | 'checkin' | 'class-update' | 'error';
+  event: 'pong' | 'checkin' | 'class-started' | 'checkin_confirmed' | 'class-update' | 'error';
   detail?: string;
-  data?: Attendance | ClassSession;
+  data?: Attendance | ClassSession | Record<string, unknown>;
 }
 
 export interface UpcomingClass {

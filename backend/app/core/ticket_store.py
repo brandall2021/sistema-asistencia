@@ -1,7 +1,8 @@
 """Tickets de un solo uso para conexiones WebSocket.
 
-Un ticket se emite contra un ``User`` y una ``class_id``, expira en segundos
-y se consume (no puede reutilizarse).
+Un ticket se emite contra un ``User`` y, opcionalmente, una ``class_id``
+(canal de clase). Si no se liga a una clase, sirve para el canal personal de
+notificaciones. Expira en segundos y se consume (no puede reutilizarse).
 """
 
 import secrets
@@ -30,11 +31,11 @@ class TicketStore:
     def _issue_key(self, ticket: str) -> str:
         return f"wsticket:{ticket}"
 
-    def issue(self, class_id: str, user_id: str) -> tuple[str, int]:
-        """Crea un ticket de un solo uso asociado a clase y usuario."""
+    def issue(self, class_id: str | None, user_id: str) -> tuple[str, int]:
+        """Crea un ticket de un solo uso; ``class_id=None`` = canal personal."""
         ttl = settings.WS_TICKET_TTL_SECONDS
         ticket = secrets.token_urlsafe(32)
-        value = f"{class_id}|{user_id}"
+        value = f"{class_id or ''}|{user_id}"
         if self._redis_ok:
             try:
                 self._redis.setex(self._issue_key(ticket), ttl, value)
@@ -42,12 +43,13 @@ class TicketStore:
             except Exception:
                 self._redis_ok = False
         with self._lock:
-            self._mem[ticket] = (class_id, user_id, time.time() + ttl)
+            self._mem[ticket] = (class_id or '', user_id, time.time() + ttl)
             return ticket, ttl
 
-    def consume(self, ticket: str, class_id: str) -> str | None:
+    def consume(self, ticket: str, class_id: str | None) -> str | None:
         """Consume el ticket y devuelve el ``user_id`` si clase + TTL son válidos.
 
+        ``class_id=None`` solo acepta tickets de canal personal (sin clase).
         El ticket es de un solo uso: se elimina en el primer intento, válido o no.
         """
         if not ticket:
@@ -71,7 +73,7 @@ class TicketStore:
                     return None
                 value = f"{entry[0]}|{entry[1]}"
         bound_class, bound_user = value.split("|", 1)
-        if bound_class != class_id:
+        if bound_class != (class_id or ""):
             return None
         return bound_user
 

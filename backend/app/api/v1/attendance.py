@@ -49,6 +49,12 @@ async def check_in(
         "status": record.status,
         "check_in_at": record.check_in_at.isoformat() if record.check_in_at else None,
     }))
+    asyncio.create_task(manager.notify_user(str(student.user_id), "checkin_confirmed", {
+        "attendance_id": str(record.id),
+        "class_id": str(record.class_id),
+        "status": record.status,
+        "check_in_at": record.check_in_at.isoformat() if record.check_in_at else None,
+    }))
     return CheckInResponse(
         success=True,
         status=record.status,

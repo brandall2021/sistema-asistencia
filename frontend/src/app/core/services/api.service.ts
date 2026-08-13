@@ -38,6 +38,13 @@ export class ApiService {
     return lastValueFrom(this.http.delete<T>(path));
   }
 
+  getWsTicket(classId?: string): Promise<{ ticket: string; expires_in: number }> {
+    return this.post<{ ticket: string; expires_in: number }>(
+      '/auth/ws-ticket',
+      classId ? { class_id: classId } : {},
+    );
+  }
+
   private params(params?: QueryParams): HttpParams {
     let p = new HttpParams();
     if (params) {

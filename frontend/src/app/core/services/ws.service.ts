@@ -1,63 +1,118 @@
 import { Injectable } from '@angular/core';
 import { Observable, Subject, timer } from 'rxjs';
 import { AuthService } from './auth.service';
+import { ApiService } from './api.service';
 import { environment } from '../../../environments/environment';
 import { WSEvent } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class WsService {
-  private socket: WebSocket | null = null;
-  private events = new Subject<WSEvent>();
-  private retries = 0;
+  private classEvents = new Subject<WSEvent>();
+  private notifEvents = new Subject<WSEvent>();
+  private classSocket: WebSocket | null = null;
+  private notifSocket: WebSocket | null = null;
   private classId: string | null = null;
+  private classRetries = 0;
+  private notifRetries = 0;
 
-  constructor(private auth: AuthService) {}
+  constructor(private auth: AuthService, private api: ApiService) {}
 
   connect(classId: string): Observable<WSEvent> {
     this.classId = classId;
-    this.retries = 0;
-    this.open();
-    return this.events.asObservable();
+    this.classRetries = 0;
+    void this.openClass();
+    return this.classEvents.asObservable();
+  }
+
+  connectNotifications(): Observable<WSEvent> {
+    this.notifRetries = 0;
+    void this.openNotifications();
+    return this.notifEvents.asObservable();
   }
 
   disconnect(): void {
     this.classId = null;
-    if (this.socket) {
-      this.socket.onclose = null;
-      this.socket.close();
-      this.socket = null;
+    if (this.classSocket) {
+      this.classSocket.onclose = null;
+      this.classSocket.close();
+      this.classSocket = null;
+    }
+  }
+
+  disconnectNotifications(): void {
+    if (this.notifSocket) {
+      this.notifSocket.onclose = null;
+      this.notifSocket.close();
+      this.notifSocket = null;
     }
   }
 
   ping(): void {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send('ping');
+    if (this.classSocket && this.classSocket.readyState === WebSocket.OPEN) {
+      this.classSocket.send('ping');
+    }
+    if (this.notifSocket && this.notifSocket.readyState === WebSocket.OPEN) {
+      this.notifSocket.send('ping');
     }
   }
 
-  private open(): void {
-    const token = this.auth.accessToken;
-    if (!this.classId || !token) {
+  private async openClass(): Promise<void> {
+    if (!this.auth.isAuthenticated() || !this.classId) {
       return;
     }
-    const url = `${environment.wsUrl}/ws/classes/${this.classId}?token=${encodeURIComponent(token)}`;
-    this.socket = new WebSocket(url);
-    this.socket.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data) as WSEvent;
-        this.events.next(data);
-      } catch {
-        /* ignorar mensajes no JSON */
-      }
-    };
-    this.socket.onclose = () => {
-      if (this.classId && this.retries < 5) {
-        this.retries++;
-        timer(1000 * this.retries).subscribe(() => this.open());
-      }
-    };
-    this.socket.onerror = () => {
-      this.socket?.close();
-    };
+    try {
+      const { ticket } = await this.api.getWsTicket(this.classId);
+      const url = `${environment.wsUrl}/ws/classes/${this.classId}?ticket=${encodeURIComponent(ticket)}`;
+      const socket = new WebSocket(url);
+      this.classSocket = socket;
+      socket.onmessage = (ev) => this.emit(this.classEvents, ev);
+      socket.onerror = () => socket.close();
+      socket.onclose = () => {
+        if (this.classSocket === socket) {
+          this.classSocket = null;
+        }
+        if (this.classId) {
+          this.retry(() => this.openClass(), ++this.classRetries);
+        }
+      };
+    } catch {
+      this.retry(() => this.openClass(), ++this.classRetries);
+    }
+  }
+
+  private async openNotifications(): Promise<void> {
+    if (!this.auth.isAuthenticated()) {
+      return;
+    }
+    try {
+      const { ticket } = await this.api.getWsTicket();
+      const url = `${environment.wsUrl}/ws/notifications?ticket=${encodeURIComponent(ticket)}`;
+      const socket = new WebSocket(url);
+      this.notifSocket = socket;
+      socket.onmessage = (ev) => this.emit(this.notifEvents, ev);
+      socket.onerror = () => socket.close();
+      socket.onclose = () => {
+        if (this.notifSocket === socket) {
+          this.notifSocket = null;
+        }
+        this.retry(() => this.openNotifications(), ++this.notifRetries);
+      };
+    } catch {
+      this.retry(() => this.openNotifications(), ++this.notifRetries);
+    }
+  }
+
+  private retry(fn: () => void, attempt: number): void {
+    if (attempt <= 5) {
+      timer(1000 * attempt).subscribe(() => fn());
+    }
+  }
+
+  private emit(subject: Subject<WSEvent>, ev: MessageEvent): void {
+    try {
+      subject.next(JSON.parse(ev.data) as WSEvent);
+    } catch {
+      /* ignorar mensajes no JSON */
+    }
   }
 }

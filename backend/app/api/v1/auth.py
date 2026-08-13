@@ -146,14 +146,19 @@ def logout(payload: RefreshRequest, request: Request, db: DbDep, user: CurrentUs
 
 @router.post("/ws-ticket", response_model=WSTicketResponse)
 def ws_ticket(payload: WSTicketRequest, request: Request, db: DbDep, user: CurrentUser) -> WSTicketResponse:
-    cls = db.get(ClassSession, payload.class_id)
-    if cls is None:
-        raise HTTPException(status_code=404, detail="Clase no encontrada")
-    if not can_access_class(db, user, cls):
-        raise HTTPException(status_code=403, detail="No tiene acceso a esta clase")
-    ticket, expires_in = ticket_store.issue(str(cls.id), str(user.id))
-    audit(db, action="ws_ticket_issue", entity="class", entity_id=str(cls.id),
-          user_id=str(user.id), username=user.username, request=request)
+    if payload.class_id:
+        cls = db.get(ClassSession, payload.class_id)
+        if cls is None:
+            raise HTTPException(status_code=404, detail="Clase no encontrada")
+        if not can_access_class(db, user, cls):
+            raise HTTPException(status_code=403, detail="No tiene acceso a esta clase")
+        ticket, expires_in = ticket_store.issue(str(cls.id), str(user.id))
+        audit(db, action="ws_ticket_issue", entity="class", entity_id=str(cls.id),
+              user_id=str(user.id), username=user.username, request=request)
+    else:
+        ticket, expires_in = ticket_store.issue(None, str(user.id))
+        audit(db, action="ws_ticket_issue", entity="user", entity_id=str(user.id),
+              user_id=str(user.id), username=user.username, request=request)
     return WSTicketResponse(ticket=ticket, expires_in=expires_in)
 
 
