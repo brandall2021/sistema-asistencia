@@ -23,6 +23,13 @@ export interface SeriesData {
   distribution: ChartDatum[];
 }
 
+export interface ReportFilters extends Record<string, string | number | boolean | undefined | null> {
+  commission_id?: string;
+  career_id?: string;
+  from_date?: string;
+  to_date?: string;
+}
+
 export interface StudentStats {
   overall: number;
   perSubject: { subject: string; pct: number }[];
@@ -61,40 +68,43 @@ export class DashboardService {
     }
   }
 
-  async loadLowAttendance(): Promise<AttendanceReportItem[]> {
+  async loadLowAttendance(filters: ReportFilters = {}): Promise<AttendanceReportItem[]> {
     try {
-      return await this.api.get<AttendanceReportItem[]>('/reports/students/low-attendance');
+      return await this.api.get<AttendanceReportItem[]>('/reports/students/low-attendance', filters);
     } catch {
       return [];
     }
   }
 
-  async loadSeries(period: PeriodKey): Promise<SeriesData> {
+  async loadAttendanceReport(filters: ReportFilters = {}): Promise<AttendanceReportItem[]> {
     try {
-      const windows = this.windowsFor(period);
-      const rows = await Promise.all(
-        windows.map((w) =>
-          this.api.get<AttendanceReportItem[]>('/reports/attendance', {
-            dimension: 'student',
-            from_date: this.fmtDate(w.from),
-            to_date: this.fmtDate(w.to),
-          }),
-        ),
-      );
+      return await this.api.get<AttendanceReportItem[]>('/reports/attendance', {
+        dimension: 'student',
+        ...filters,
+      });
+    } catch {
+      return [];
+    }
+  }
 
-      const evolution: ChartDatum[] = windows.map((w, i) => ({
-        label: w.label,
-        value: rows[i].reduce((sum, r) => sum + r.present + r.late + r.justified + r.absent, 0),
-      }));
+  async loadSeries(period: PeriodKey, filters: ReportFilters = {}): Promise<SeriesData> {
+    try {
+      return await this.loadSeriesForWindows(this.windowsFor(period), filters);
+    } catch {
+      return { evolution: [], distribution: [] };
+    }
+  }
 
-      const distribution: ChartDatum[] = [
-        { label: 'Presente', value: this.sumStatus(rows, 'present') },
-        { label: 'Tarde', value: this.sumStatus(rows, 'late') },
-        { label: 'Ausente', value: this.sumStatus(rows, 'absent') },
-        { label: 'Justificado', value: this.sumStatus(rows, 'justified') },
-      ];
+  async loadSeriesRange(filters: ReportFilters = {}): Promise<SeriesData> {
+    try {
+      const from = this.parseDate(filters.from_date);
+      const to = this.parseDate(filters.to_date);
 
-      return { evolution, distribution };
+      if (!from || !to) {
+        return await this.loadSeries('month', filters);
+      }
+
+      return await this.loadSeriesForWindows(this.windowsForRange(from, to), filters);
     } catch {
       return { evolution: [], distribution: [] };
     }
@@ -171,6 +181,73 @@ export class DashboardService {
         label: `${this.dayMonth(from)}–${this.dayMonth(to)}`,
       };
     });
+  }
+
+  private windowsForRange(from: Date, to: Date): WindowSpec[] {
+    const start = from <= to ? from : to;
+    const end = from <= to ? to : from;
+    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+
+    if (days <= 14) {
+      return Array.from({ length: days }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        return { from: d, to: d, label: `${DAY_NAMES[d.getDay()]} ${this.dayMonth(d)}` };
+      });
+    }
+
+    const out: WindowSpec[] = [];
+    let cursor = new Date(start);
+    while (cursor <= end) {
+      const fromWindow = new Date(cursor);
+      const toWindow = new Date(cursor);
+      toWindow.setDate(cursor.getDate() + 6);
+      if (toWindow > end) {
+        toWindow.setTime(end.getTime());
+      }
+      out.push({ from: fromWindow, to: toWindow, label: `${this.dayMonth(fromWindow)}–${this.dayMonth(toWindow)}` });
+      cursor = new Date(toWindow);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return out;
+  }
+
+  private async loadSeriesForWindows(windows: WindowSpec[], filters: ReportFilters): Promise<SeriesData> {
+    const rows = await Promise.all(
+      windows.map((w) =>
+        this.api.get<AttendanceReportItem[]>('/reports/attendance', {
+          dimension: 'student',
+          ...filters,
+          from_date: this.fmtDate(w.from),
+          to_date: this.fmtDate(w.to),
+        }),
+      ),
+    );
+
+    const evolution: ChartDatum[] = windows.map((w, i) => ({
+      label: w.label,
+      value: rows[i].reduce((sum, r) => sum + r.present + r.late + r.justified + r.absent, 0),
+    }));
+
+    const distribution: ChartDatum[] = [
+      { label: 'Presente', value: this.sumStatus(rows, 'present') },
+      { label: 'Tarde', value: this.sumStatus(rows, 'late') },
+      { label: 'Ausente', value: this.sumStatus(rows, 'absent') },
+      { label: 'Justificada', value: this.sumStatus(rows, 'justified') },
+    ];
+
+    return { evolution, distribution };
+  }
+
+  private parseDate(value?: string): Date | null {
+    if (!value) {
+      return null;
+    }
+    const [year, month, day] = value.split('-').map((part) => Number(part));
+    if (!year || !month || !day) {
+      return null;
+    }
+    return new Date(year, month - 1, day);
   }
 
   private startOfWeek(d: Date): Date {
