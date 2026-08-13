@@ -232,6 +232,7 @@ export class ScanComponent implements OnDestroy {
     this.checkingStep = 0;
     await this.loadCameraOptions();
     this.view = 'scanning';
+    await this.waitForNextFrame();
 
     const video = this.videoRef?.nativeElement;
     if (!video) {
@@ -538,6 +539,10 @@ export class ScanComponent implements OnDestroy {
       window.clearTimeout(this.focusTimer);
       this.focusTimer = null;
     }
+  }
+
+  private waitForNextFrame(): Promise<void> {
+    return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
   }
 
   private showCameraError(error: unknown): void {
