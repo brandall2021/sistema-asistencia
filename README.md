@@ -1,416 +1,360 @@
 # Sistema de Asistencia Universitaria
 
-Sistema web / PWA para el control de asistencia a clases mediante **QR dinámico**, **geolocalización GPS** y **control horario**, con roles, auditoría y notificaciones en tiempo real vía WebSocket.
+Sistema web y PWA para control de asistencia universitario con **QR dinámico**, **geolocalización GPS**, **control horario**, roles, auditoría y notificaciones en tiempo real.
 
-Repo: <https://github.com/brandall2021/sistema-asistencia>
+Repositorio: <https://github.com/brandall2021/sistema-asistencia>
 
----
+## Qué incluye
+
+- Login con JWT y roles.
+- Dashboard distinto para ADMIN, DOCENTE, ALUMNO y AUDITOR.
+- Gestión de carreras, materias, comisiones, estudiantes, docentes, usuarios, aulas, horarios, clases y auditoría.
+- Generación y validación de QR con expiración.
+- Check-in con GPS y tolerancia por aula.
+- Reportes con filtros, KPIs, gráficos y exportación.
+- WebSocket para asistencia en vivo y notificaciones.
+- Frontend Angular 21 rediseñado con Material 3, tema claro/oscuro y componentes compartidos.
 
 ## Índice
 
-1. [Stack tecnológico](#stack-tecnológico)
-2. [Estructura del proyecto](#estructura-del-proyecto)
-3. [Modelo de datos](#modelo-de-datos)
-4. [Reglas de negocio](#reglas-de-negocio)
-5. [API REST](#api-rest)
-6. [WebSocket en tiempo real](#websocket-en-tiempo-real)
-7. [Autenticación y seguridad](#autenticación-y-seguridad)
-8. [Variables de entorno](#variables-de-entorno)
-9. [Desarrollo local](#desarrollo-local)
-10. [Tests](#tests)
-11. [Despliegue con Docker (standalone)](#despliegue-con-docker-standalone)
-12. [Despliegue en Dokploy](#despliegue-en-dokploy)
-13. [Flujo de uso completo](#flujo-de-uso-completo)
-
----
+1. [Stack tecnológico](#stack-tecnologico)
+2. [Estado actual](#estado-actual)
+3. [Estructura del proyecto](#estructura-del-proyecto)
+4. [Frontend rediseñado](#frontend-redisenado)
+5. [Modelo de datos](#modelo-de-datos)
+6. [Reglas de negocio](#reglas-de-negocio)
+7. [API REST](#api-rest)
+8. [WebSocket en tiempo real](#websocket-en-tiempo-real)
+9. [Autenticación y seguridad](#autenticacion-y-seguridad)
+10. [Variables de entorno](#variables-de-entorno)
+11. [Desarrollo local](#desarrollo-local)
+12. [Tests](#tests)
+13. [Despliegue con Docker](#despliegue-con-docker)
+14. [Despliegue en Dokploy](#despliegue-en-dokploy)
+15. [Flujo de uso completo](#flujo-de-uso-completo)
 
 ## Stack tecnológico
 
 | Capa | Tecnología |
 | --- | --- |
-| Frontend | Angular 21 + Angular Material + PWA (Service Worker) |
+| Frontend | Angular 21 + Angular Material 3 + PWA |
 | Backend | FastAPI + SQLAlchemy 2 + Pydantic 2 + Alembic |
-| Autenticación | JWT (access 30 min / refresh 7 días) + Argon2 |
-| Cache / rate-limit | Redis (con fallback en memoria para entornos sin Redis) |
-| Base de datos | PostgreSQL 16 (SQLite para tests y desarrollo local) |
+| Autenticación | JWT HS256 + Argon2 |
 | Tiempo real | WebSocket (FastAPI) |
-| Infra | Docker Compose + Nginx (HTTPS + WebSocket) |
-| PaaS | Dokploy (Nginx Proxy Manager + Let's Encrypt) |
+| Base de datos | PostgreSQL en producción, SQLite en desarrollo y tests |
+| Cache / tickets | Redis con fallback en memoria |
+| Infra | Docker Compose + Nginx + TLS |
+| PaaS | Dokploy |
 
----
+## Estado actual
+
+- Backend verificado con **97/97 tests pasando**.
+- Frontend compila en producción con `npx ng build --configuration production`.
+- El frontend fue rediseñado con una base visual nueva: tokens, shell, dashboards, tablas responsive, formularios reutilizables y flujo móvil.
+- Las cuentas demo del seed usan emails `*.demo@universidad.edu` para no chocar con los fixtures de test.
 
 ## Estructura del proyecto
 
-```
+```text
 sistema-asistencia/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/          # routers: auth, users, students, teachers, careers,
-│   │   │                    #   subjects, commissions, enrollments, classrooms,
-│   │   │                    #   schedules, classes, attendance, reports, audit, ws
-│   │   ├── core/            # config, security, rate_limit, token_store, audit, deps
-│   │   ├── db/              # base, session, seed (roles + admin inicial)
-│   │   ├── models/          # 17 tablas SQLAlchemy
-│   │   ├── schemas/         # Pydantic v2 (entrada/salida)
-│   │   └── services/        # geo (Haversine), qr (tokens), attendance, ws
-│   ├── alembic/             # migraciones de esquema
-│   ├── tests/               # pytest (59 tests)
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── requirements-dev.txt
-├── frontend/                # Angular + Material + PWA
-│   ├── src/app/core/        # models, guards, interceptors, servicios (auth, api, ws)
-│   ├── src/app/shared/      # shell (menú por rol, responsive)
-│   ├── src/app/views/       # login, home, admin/*, student/*
-│   ├── Dockerfile           # nginx con TLS (deploy standalone)
-│   ├── Dockerfile.dokploy   # nginx solo HTTP (deploy Dokploy)
-│   ├── nginx.conf           # TLS + proxy /api (incluye WebSocket)
-│   └── nginx.dokploy.conf   # HTTP + proxy /api (incluye WebSocket)
-├── docker-compose.yml         # despliegue standalone (TLS)
-├── docker-compose.dokploy.yml # despliegue en Dokploy
-├── .env.example
+│   │   ├── api/v1/          # routers auth, users, students, teachers, careers, subjects, commissions, enrollments, classrooms, schedules, classes, attendance, reports, audit, ws
+│   │   ├── core/            # config, security, rate limit, token store, audit, deps
+│   │   ├── db/              # base, session, seed
+│   │   ├── models/          # SQLAlchemy
+│   │   ├── schemas/         # Pydantic
+│   │   └── services/        # qr, geo, attendance, ws
+│   ├── alembic/
+│   ├── tests/
+│   └── requirements*.txt
+├── frontend/
+│   └── src/app/
+│       ├── core/            # models, guards, services
+│       ├── shared/          # shell, componentes, forms
+│       └── views/           # login, home, admin/*, student/*
+├── docs/
+├── docker-compose.yml
+├── docker-compose.dokploy.yml
 └── README.md
 ```
 
-### Frontend: vistas por rol
+## Frontend rediseñado
+
+El frontend actual usa:
+
+- Tokens CSS para colores, radios, sombras, tipografías y breakpoints.
+- Tema Material 3 claro/oscuro.
+- Shell con sidebar colapsable, breadcrumbs, topbar, notificaciones y menú de perfil.
+- Componentes compartidos:
+  - `app-page-header`
+  - `app-breadcrumbs`
+  - `app-status-chip`
+  - `app-user-avatar`
+  - `app-empty-state`
+  - `app-error-state`
+  - `app-loading-skeleton`
+  - `app-kpi-card`
+  - `app-filter-bar`
+  - `app-responsive-table`
+  - `app-confirm-dialog`
+  - `app-simple-chart`
+  - `FormDialogComponent`
+  - `FormDrawerComponent`
+- Vistas principales:
+  - Login dividido (institucional + formulario).
+  - Dashboard por rol.
+  - CRUDs breves con diálogo.
+  - CRUDs medianos con drawer.
+  - Clases con vista lista/calendario y detalle con QR.
+  - Escáner QR con estados guiados.
+  - Reportes con KPIs y gráficos.
+
+### Vistas por rol
 
 | Rol | Vistas |
 | --- | --- |
-| ADMIN | Inicio (dashboard), Usuarios, Estudiantes, Docentes, Carreras, Materias, Comisiones, Inscripciones, Aulas, Horarios, Clases, Reportes, Auditoría |
-| DOCENTE | Inicio (dashboard), Mis Clases (solo sus comisiones), detalle de clase con QR y asistencia en vivo |
-| ALUMNO | Inicio (dashboard), Escanear QR, Mi Asistencia (historial) |
-| AUDITOR | Inicio (dashboard), Reportes (solo lectura) |
-
----
+| ADMIN | Dashboard, usuarios, estudiantes, docentes, carreras, materias, comisiones, inscripciones, aulas, horarios, clases, reportes, auditoría |
+| DOCENTE | Dashboard, clases propias, detalle de clase con QR, reportes de lectura |
+| ALUMNO | Dashboard, escáner QR, historial propio |
+| AUDITOR | Dashboard de lectura, reportes |
 
 ## Modelo de datos
 
-17 tablas gestionadas con Alembic (migración inicial `07ead28ac650_initial_schema`):
+17 tablas gestionadas con Alembic:
 
 | Tabla | Descripción |
 | --- | --- |
-| `users` | Usuarios del sistema (login, contraseña argon2, activo) |
-| `roles` | Catálogo de roles: `ADMIN`, `DOCENTE`, `ALUMNO`, `AUDITOR` |
-| `user_roles` | Relación N:M usuario ↔ rol |
-| `students` | Alumnos (legajo, usuario vinculado) |
-| `teachers` | Docentes (usuario vinculado) |
+| `users` | Usuarios del sistema |
+| `roles` | Catálogo de roles |
+| `user_roles` | Relación N:M usuario-rol |
+| `students` | Alumnos |
+| `teachers` | Docentes |
 | `careers` | Carreras |
-| `subjects` | Materias (pertenecen a una carrera) |
-| `commissions` | Comisiones de una materia (año, cuatrimestre, docente a cargo) |
-| `enrollments` | Inscripciones de alumnos a comisiones (`ACTIVE`/`INACTIVE`) |
-| `classrooms` | Aulas (nombre, ubicación lat/lon, radio en metros) |
-| `schedules` | Horarios (comisión, día de semana, hora inicio/fin, aula) |
-| `classes` | Sesiones de clase (comisión, aula, fecha, hora, estado) |
-| `qr_sessions` | Tokens QR dinámicos (solo se guarda el hash SHA-256) |
-| `attendance` | Asistencias (estado, método, hora, geolocalización) |
-| `attendance_events` | Eventos de asistencia (para notificación en tiempo real) |
-| `justifications` | Justificaciones de inasistencia |
-| `audit_logs` | Auditoría de acciones sensibles |
+| `subjects` | Materias |
+| `commissions` | Comisiones |
+| `enrollments` | Inscripciones |
+| `classrooms` | Aulas |
+| `schedules` | Horarios |
+| `classes` | Sesiones de clase |
+| `qr_sessions` | Tokens QR con hash SHA-256 |
+| `attendance` | Asistencias |
+| `attendance_events` | Eventos para WebSocket |
+| `justifications` | Justificaciones |
+| `audit_logs` | Auditoría |
 
-### Estados (enums)
+### Estados
 
-- **Clase**: `SCHEDULED`, `ACTIVE`, `FINISHED`, `CANCELLED`
-- **Asistencia**: `PRESENT`, `LATE`, `ABSENT`, `JUSTIFIED`, `REVIEW`, `REJECTED`
-- **Justificación**: `PENDING`, `APPROVED`, `REJECTED`
-- **Inscripción**: `ACTIVE`, `INACTIVE`
-- **Check-in**: `QR`, `MANUAL`
-
----
+- Clase: `SCHEDULED`, `ACTIVE`, `FINISHED`, `CANCELLED`
+- Asistencia: `PRESENT`, `LATE`, `ABSENT`, `JUSTIFIED`, `REVIEW`, `REJECTED`
+- Justificación: `PENDING`, `APPROVED`, `REJECTED`
+- Inscripción: `ACTIVE`, `INACTIVE`
+- Check-in: `QR`, `MANUAL`
 
 ## Reglas de negocio
 
 ### QR dinámico
 
-- Cada QR es un token aleatorio de **48 bytes** con vida de **30–60 s** (por defecto **45 s**).
-- El servidor guarda **solo el hash SHA-256** del token y **resuelve la clase desde el token**, nunca confía en un `class_id` enviado por el cliente.
-- Generar un nuevo QR **revoca los anteriores**; finalizar la clase los revoca todos.
-- Solo se puede generar un QR mientras la clase está `ACTIVE`.
+- El QR expira en 30-60 s (por defecto 45 s).
+- El backend guarda solo el hash SHA-256 del token.
+- Un nuevo QR revoca el anterior.
+- Finalizar la clase revoca todos los QR vigentes.
+- Solo se puede generar QR cuando la clase está `ACTIVE`.
 
 ### Geolocalización
 
-- Se captura la ubicación **solo en el check-in** (sin seguimiento permanente).
-- La distancia al aula se calcula con la fórmula de **Haversine**.
-- Se rechaza el check-in si `accuracy > GPS_MAX_ACCURACY` (**25 m** por defecto) o si `distance > radius_meters` del aula.
-- El docente ve una marca de localización en cada asistencia registrada.
+- La ubicación se usa solo al hacer check-in.
+- La distancia al aula se calcula con Haversine.
+- Se rechaza si la precisión es mayor a 25 m o si el alumno está fuera del radio del aula.
 
-### Asistencia y control horario
+### Asistencia
 
-- Estados: `PRESENT, LATE, ABSENT, JUSTIFIED, REVIEW, REJECTED`.
-- Regla `UNIQUE(class_id, student_id)`: **una sola asistencia** por estudiante y clase.
-- Tolerancia de llegada tarde: `LATE_GRACE_MINUTES` (**10 min** por defecto) tras el horario de la clase.
-- Validaciones del check-in: token válido/no vencido, clase activa, alumno inscripto, GPS disponible/preciso/dentro del radio, sin asistencia previa.
+- Un alumno solo puede registrar una asistencia por clase.
+- La tolerancia para `LATE` es de 10 minutos por defecto.
 - El alumno ve su historial en `/attendance/me`.
-- El docente puede cambiar estados (`change_status`) y revisar justificaciones (`review`).
-- Los justificativos quedan `PENDING` hasta que el docente los aprueba o rechaza.
+- El docente puede cambiar estados y revisar justificaciones.
 
 ### Roles y permisos
 
-- `ADMIN`: gestión completa de todo el catálogo (usuarios, alumnos, docentes, carreras, materias, comisiones, inscripciones, aulas, horarios, clases, reportes, auditoría).
-- `DOCENTE`: solo sus comisiones (`commission.teacher_id == user.id`); no puede ver datos de otras.
-- `ALUMNO`: escaneo de QR + historial propio.
-- `AUDITOR`: reportes de solo lectura.
-
-### Auditoría
-
-- Toda acción sensible (login, cambios de estado, borrados, etc.) se registra en `audit_logs`.
-- El endpoint `GET /audit` permite consultarlos (solo ADMIN).
-
----
+- `ADMIN`: acceso completo.
+- `DOCENTE`: solo sus comisiones/clases.
+- `ALUMNO`: escaneo y historial propio.
+- `AUDITOR`: solo lectura.
 
 ## API REST
 
-Todas las rutas están bajo el prefijo `API_V1_PREFIX` (**`/api/v1`**). La documentación interactiva (Swagger) queda en `GET /docs`.
+Todas las rutas cuelgan de `/api/v1`.
 
-### Autenticación (`/auth`)
-
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| POST | `/auth/login` | Login, devuelve access + refresh token (con rate-limit) |
-| POST | `/auth/refresh` | Renueva el access token con el refresh token |
-| POST | `/auth/logout` | Revoca el refresh token |
-| GET | `/auth/me` | Datos del usuario autenticado (con roles) |
-| POST | `/auth/change-password` | Cambio de contraseña (requiere la actual) |
-
-### CRUD de catálogo (`/users`, `/students`, `/teachers`, `/careers`, `/subjects`, `/commissions`, `/enrollments`, `/classrooms`, `/schedules`)
-
-Cada recurso expone el mismo patrón (acceso ADMIN):
+### Autenticación
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| GET | `/{recurso}` | Listado (paginado en users/students/teachers/enrollments) |
-| POST | `/{recurso}` | Crear |
-| GET | `/{recurso}/{id}` | Detalle |
-| PATCH | `/{recurso}/{id}` | Actualizar |
-| DELETE | `/{recurso}/{id}` | Eliminar |
+| POST | `/auth/login` | Login |
+| POST | `/auth/refresh` | Renovar access token |
+| POST | `/auth/logout` | Revocar refresh token |
+| GET | `/auth/me` | Usuario autenticado |
+| POST | `/auth/change-password` | Cambio de contraseña |
 
-### Clases (`/classes`)
+### Catálogos
+
+| Método | Ruta |
+| --- | --- |
+| GET/POST/GET/PATCH/DELETE | `/users` |
+| GET/POST/GET/PATCH/DELETE | `/students` |
+| GET/POST/GET/PATCH/DELETE | `/teachers` |
+| GET/POST/GET/PATCH/DELETE | `/careers` |
+| GET/POST/GET/PATCH/DELETE | `/subjects` |
+| GET/POST/GET/PATCH/DELETE | `/commissions` |
+| GET/POST/GET/PATCH/DELETE | `/enrollments` |
+| GET/POST/GET/PATCH/DELETE | `/classrooms` |
+| GET/POST/GET/PATCH/DELETE | `/schedules` |
+
+### Clases
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| GET | `/classes` | Listado (docente ve solo sus comisiones) |
-| POST | `/classes` | Crear sesión |
+| GET | `/classes` | Listado |
+| POST | `/classes` | Crear clase |
 | GET | `/classes/{id}` | Detalle |
 | PATCH | `/classes/{id}` | Actualizar |
-| POST | `/classes/{id}/start` | Iniciar la clase → estado `ACTIVE` |
-| POST | `/classes/{id}/finish` | Finalizar la clase → estado `FINISHED` y revoca QRs |
-| GET | `/classes/{id}/attendance` | Asistencias de la clase |
-| POST | `/classes/{id}/qr` | Genera un QR dinámico (devuelve token + expiración) |
+| POST | `/classes/{id}/start` | Iniciar |
+| POST | `/classes/{id}/finish` | Finalizar |
+| GET | `/classes/{id}/attendance` | Asistencias en vivo |
+| POST | `/classes/{id}/qr` | Generar QR |
 
-### Asistencia (`/attendance`)
+### Asistencia
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| POST | `/attendance/check-in` | Check-in por QR (token + lat/lon + accuracy) |
-| GET | `/attendance/me` | Historial del alumno autenticado |
-| GET | `/attendance/class/{class_id}` | Asistencias de una clase (paginado) |
-| PATCH | `/attendance/{id}/status` | Cambiar estado de una asistencia (docente) |
-| POST | `/attendance/justify` | Solicitar justificación |
-| GET | `/attendance/justifications` | Listado de justificaciones |
-| POST | `/attendance/justifications/{id}/review` | Aprobar/rechazar justificación (docente) |
+| Método | Ruta |
+| --- | --- |
+| POST | `/attendance/check-in` |
+| GET | `/attendance/me` |
+| GET | `/attendance/class/{class_id}` |
+| PATCH | `/attendance/{id}/status` |
+| POST | `/attendance/justify` |
+| GET | `/attendance/justifications` |
+| POST | `/attendance/justifications/{id}/review` |
 
-### Reportes (`/reports`)
+### Reportes
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| GET | `/reports/attendance` | Reporte de asistencia por filtros (comisión, materia, fecha) |
-| GET | `/reports/students/low-attendance` | Alumnos con baja asistencia |
-| GET | `/reports/attendance/export?format=csv\|xlsx` | Exportación a CSV o XLSX |
+| Método | Ruta |
+| --- | --- |
+| GET | `/reports/attendance` |
+| GET | `/reports/students/low-attendance` |
+| GET | `/reports/attendance/export?format=csv|xlsx` |
 
-### Auditoría (`/audit`)
+### Auditoría
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| GET | `/audit` | Registro de acciones sensibles (paginado) |
+| Método | Ruta |
+| --- | --- |
+| GET | `/audit` |
 
-### Dashboard (`/dashboard`)
+### Dashboard
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| GET | `/summary` | Resumen por rol: clases hoy/activas, tasa de asistencia del día, justificaciones pendientes, alumnos con baja asistencia, próximas clases, asistencia reciente, materias en riesgo (alumno) y últimos eventos de auditoría (admin/auditor). |
-
-El resumen está acotado al alcance del usuario: ADMIN/AUDITOR ven todo, DOCENTE solo sus comisiones y ALUMNO solo sus inscripciones/registros.
-
----
+| Método | Ruta |
+| --- | --- |
+| GET | `/dashboard/summary` |
 
 ## WebSocket en tiempo real
 
-- **Se obtiene un ticket de un solo uso**: `POST /auth/ws-ticket` (Bearer access) → `{"ticket": "...", "expires_in": 30}`.
-- **URL (canal de clase)**: `wss://<host>/api/v1/ws/classes/{class_id}?ticket=<ticket>` — el access token **no viaja en la URL**.
-- **URL (canal personal de notificaciones)**: `wss://<host>/api/v1/ws/notifications?ticket=<ticket>` — el ticket se pide a `/auth/ws-ticket` **sin** `class_id`.
-- El ticket: expira en 30 s (configurable), es de un solo uso, está asociado al usuario (y a la clase si se pidió con `class_id`), y se guarda en Redis (con fallback en memoria).
-- Por compatibilidad se acepta aún `?token=<access_token>` (deprecado).
-- El docente abre el canal al iniciar la clase y ve las asistencias **en vivo**.
-- Mensajes del cliente: `{"event": "ping"}`.
-- Respuestas del servidor:
-  - `{"event": "pong"}` para pings de mantenimiento.
-  - `{"event": "checkin", "data": {...}}` en el canal de la clase cuando un alumno hace check-in.
-  - `{"event": "class-started", "data": {...}}` en el canal personal de cada alumno inscripto cuando su clase comienza.
-  - `{"event": "checkin_confirmed", "data": {...}}` en el canal personal del alumno tras registrar asistencia.
-  - `{"event": "error", "detail": "..."}` si la conexión no está autorizada (se cierra con `4401`).
-- El frontend reconecta automáticamente ante caídas (backoff) renovando el ticket y muestra avisos en vivo vía snackbar.
-
----
+- `POST /auth/ws-ticket` genera un ticket de un solo uso.
+- Canal de clase: `/api/v1/ws/classes/{class_id}?ticket=...`
+- Canal personal: `/api/v1/ws/notifications?ticket=...`
+- Eventos: `pong`, `checkin`, `class-started`, `checkin_confirmed`, `class-update`, `error`.
 
 ## Autenticación y seguridad
 
-- **JWT HS256**: access token de **30 min** y refresh token de **7 días**, con `iss` propio (`sistema-asistencia-universitaria`).
-- Contraseñas con **Argon2** (nunca en claro; seed inicial crea el admin).
-- **Refresh tokens revocables y con rotación**: se invalidan en logout y en cada refresh; el backend también emite el refresh en **cookie HttpOnly** (`/api/v1/auth`, `SameSite=lax`, `Secure` en producción) y lo acepta por cookie o por body.
-- **Validación de arranque en producción**: el backend se niega a iniciar si `JWT_SECRET_KEY` es el predeterminado/corto (< 32 bytes), `ADMIN_PASSWORD=Admin123!`, la contraseña de PostgreSQL es `asistencia`, o `CORS_ORIGINS` tiene comodines/localhost. Los mensajes no exponen los secretos.
-- **Rate limiting** por IP (Redis, con fallback en memoria):
-  - Login: `10` intentos / 5 min.
-  - Check-in: `5` / 5 min.
-  - Resto de la API: `120` / 5 min.
-  - `X-Forwarded-For` solo se acepta desde proxies incluidos en `TRUSTED_PROXIES` (IP/CIDR); de otro modo se usa la IP real del peer, impidiendo evadir el límite cambiando la cabecera.
-- **CORS** restringido por `CORS_ORIGINS`.
-- **Auditoría** de acciones sensibles.
-- Importante en producción: cambiar `JWT_SECRET_KEY` y usar credenciales de admin fuertes.
+- JWT HS256: access 30 min, refresh 7 días.
+- Contraseñas con Argon2.
+- Refresh tokens revocables y rotación al renovar.
+- Rate limit por IP para login y check-in.
+- CORS restringido.
+- Validación de arranque en producción para secretos y credenciales inseguras.
 
 ### Deuda técnica registrada
 
-- **Migración de tokens en el navegador pendiente**: el frontend aún guarda access y refresh en `localStorage`. La migración a **access en memoria + refresh en cookie HttpOnly** está soportada por el backend (login/refresh/logout ya fijan/rotan/limpian la cookie) pero no se completó para no romper la autenticación con un cambio parcial. Prioridad alta de seguridad.
-
----
+- El frontend todavía usa `localStorage` para tokens.
 
 ## Variables de entorno
 
-| Variable | Default | Descripción |
-| --- | --- | --- |
-| `APP_ENV` | `development` | Entorno (`development`/`production`) |
-| `DEBUG` | `false` | Modo debug |
-| `DATABASE_URL` | `postgresql+psycopg2://asistencia:asistencia@localhost:5432/asistencia` | Conexión a la base |
-| `REDIS_URL` | `redis://localhost:6379/0` | Conexión a Redis |
-| `JWT_SECRET_KEY` | `change-me-...` | **Obligatorio cambiarlo en producción** |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Vida del access token |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Vida del refresh token |
-| `QR_TOKEN_TTL_SECONDS` | `45` | Vida del QR (rango 30–60) |
-| `GPS_MAX_ACCURACY` | `25` | Precisión GPS máxima en metros |
-| `LATE_GRACE_MINUTES` | `10` | Tolerancia de llegada tarde |
-| `RATE_LIMIT_LOGIN` | `10` | Intentos de login permitidos |
-| `RATE_LIMIT_PERIOD_SECONDS` | `300` | Ventana del rate-limit |
-| `RATE_LIMIT_CHECKIN` | `5` | Check-ins permitidos |
-| `RATE_LIMIT_DEFAULT` | `120` | Límite general |
-| `TRUSTED_PROXIES` | *(vacío)* | IP/CIDR de proxies confiables para aceptar `X-Forwarded-For` |
-| `REFRESH_COOKIE_NAME` | `refresh_token` | Nombre de la cookie HttpOnly |
-| `REFRESH_COOKIE_SECURE` | `false` | `true` en producción (HTTPS) |
-| `REFRESH_COOKIE_SAMESITE` | `lax` | `lax` o `strict` |
-| `WS_TICKET_TTL_SECONDS` | `30` | Vida del ticket de WebSocket (un solo uso) |
-| `CORS_ORIGINS` | `http://localhost:4200,...` | Orígenes CORS separados por coma |
-| `ADMIN_EMAIL` | `admin@universidad.edu` | Email del admin inicial |
-| `ADMIN_USERNAME` | `admin` | Usuario del admin inicial |
-| `ADMIN_PASSWORD` | `Admin123!` | Contraseña del admin inicial |
-| `ADMIN_FULL_NAME` | `Administrador del Sistema` | Nombre del admin inicial |
+Ver `.env.example` para el formato completo.
 
-Ver el archivo `.env.example` para el formato.
-
----
+| Variable | Default |
+| --- | --- |
+| `DATABASE_URL` | `postgresql+psycopg2://asistencia:asistencia@localhost:5432/asistencia` |
+| `REDIS_URL` | `redis://localhost:6379/0` |
+| `JWT_SECRET_KEY` | `change-me...` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` |
+| `QR_TOKEN_TTL_SECONDS` | `45` |
+| `GPS_MAX_ACCURACY` | `25` |
+| `LATE_GRACE_MINUTES` | `10` |
+| `CORS_ORIGINS` | `http://localhost:4200,...` |
+| `ADMIN_EMAIL` | `admin@universidad.edu` |
+| `ADMIN_USERNAME` | `admin` |
+| `ADMIN_PASSWORD` | `Admin123!` |
 
 ## Desarrollo local
 
-### Backend (SQLite)
-
-Requisitos: Python 3.10+.
+### Backend
 
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements-dev.txt
-
-# Base SQLite local (sin Postgres)
 export DATABASE_URL="sqlite:///./asistencia.db"
-
-# Aplicar migraciones y sembrar roles + admin
 python3 -m alembic upgrade head
-
-# Levantar la API en http://localhost:8000 (Swagger en /docs)
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend (dev server con proxy a `localhost:8000`)
-
-Requisitos: Node 20+.
+### Frontend
 
 ```bash
 cd frontend
 npm install
-npm start        # http://localhost:4200
+npm start
 ```
 
-`proxy.conf.json` reenvía `/api` (incluido el WebSocket) a `localhost:8000`, de modo que las URLs de entorno (`/api/v1`) funcionan igual que en producción.
-
----
+El frontend corre en `http://localhost:4200` y proxya `/api/v1` al backend.
 
 ## Tests
 
 ```bash
 cd backend
 rm -f test.db
-python3 -m pytest tests -q        # 59 passed
+python3 -m pytest tests -q
 ```
 
-Los tests usan **SQLite** y fallbacks en memoria para Redis (no requieren servicios externos) y cubren: autenticación y RBAC, CRUD completo, flujo QR (generación, expiración, revocación), validación GPS, reglas de asistencia, justificaciones, reportes, auditoría y WebSocket (eventos `pong`/`checkin`, rechazo de conexiones no autorizadas).
+Resultado actual: **97 passed**.
 
----
-
-## Despliegue con Docker (standalone)
-
-Usa `docker-compose.yml` (Postgres + Redis + backend + frontend) y un nginx con **TLS autofirmado** que sirve el frontend y proxya `/api/*` (con soporte WebSocket) al backend.
+## Despliegue con Docker
 
 ```bash
 cp .env.example .env
-
-# Generá certificados TLS autofirmados (o usá certificados reales):
-mkdir -p certs
-openssl req -x509 -nodes -newkey rsa:2048 -keyout certs/server.key \
-    -out certs/server.crt -days 365 -subj "/CN=asistencia.local"
-
 docker compose up -d --build
 ```
 
-- Frontend en `https://asistencia.local` (HTTP → HTTPS).
-- Backend ejecuta `alembic upgrade head` y siembra roles + administrador en el primer arranque.
-- Postgres y Redis persisten en volúmenes (`pgdata`, `redisdata`).
-
-> En producción: cambiá `JWT_SECRET_KEY`, usá certificados firmados por una CA y credenciales de administrador fuertes.
-
----
+Incluye backend, frontend, PostgreSQL, Redis y Nginx con TLS.
 
 ## Despliegue en Dokploy
 
-El proyecto incluye `docker-compose.dokploy.yml` (Postgres, Redis, backend y frontend) y un nginx **solo HTTP** (`frontend/nginx.dokploy.conf` + `frontend/Dockerfile.dokploy`): en Dokploy el TLS/HTTPS y el dominio los resuelve su proxy inverso (Nginx Proxy Manager o el dominio adjunto al servicio).
-
-### Pasos
-
-1. **Subí el repositorio** a GitHub (o GitLab/Bitbucket) y conectalo en Dokploy.
-
-2. **Creá el despliegue Compose** en Dokploy apuntando a `docker-compose.dokploy.yml` (o pegá su contenido).
-
-3. **Configurá las variables de entorno** en la UI de Dokploy (mínimas obligatorias):
-   - `JWT_SECRET_KEY` (generá una larga y aleatoria)
-   - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_USERNAME`
-   - `CORS_ORIGINS` → `https://tu-dominio.com`
-   - `POSTGRES_PASSWORD` (por defecto `asistencia`)
-   - `FRONTEND_PORT` (por defecto `8080`) y `BACKEND_PORT` (por defecto `8000`)
-
-4. **Desplegá.** El backend ejecuta `alembic upgrade head` (crea las 17 tablas) y siembra roles + administrador. PostgreSQL y Redis persisten en volúmenes propios.
-
-5. **Dominio y HTTPS con el proxy de Dokploy.** Creá un host en Nginx Proxy Manager (o adjuntá el dominio al servicio):
-   - `tu-dominio.com` → forward a `127.0.0.1:${FRONTEND_PORT}` (ej. `8080`)
-   - Habilitá **WebSocket Support** en el host y **Force SSL** con certificado **Let's Encrypt**.
-   - No hace falta un subdominio de API: el nginx del frontend proxya `/api/v1/...` y el WebSocket al backend por la red de compose.
-
-6. Entrá a `https://tu-dominio.com`, iniciá sesión con el admin y cargá el flujo completo (abajo).
-
-> Alternativa: si preferís subdominios separados, creá un host de NPM `api.tu-dominio.com` → `127.0.0.1:${BACKEND_PORT}` y dejá `CORS_ORIGINS` con ambos orígenes.
-
----
+- Usar `docker-compose.dokploy.yml`.
+- Configurar variables en la UI de Dokploy.
+- Publicar el frontend detrás del proxy de Dokploy y dejar el backend interno.
 
 ## Flujo de uso completo
 
-1. **Carga inicial (admin)**: creá una carrera → materia → comisión (con docente) → inscribí alumnos → creá un aula (con lat/lon y radio) → definí horarios.
-2. **Crear una clase (admin o docente)**: elegí comisión, aula y fecha/hora.
-3. **Iniciar la clase (docente)**: la clase pasa a `ACTIVE` y el docente abre el detalle, donde ve la asistencia **en vivo** por WebSocket.
-4. **Generar el QR (docente)**: se muestra un QR dinámico que expira en 45 s y se regenera con cada refresh.
-5. **Check-in (alumno)**: escanea el QR con la cámara; el sistema valida token, GPS (precisión y radio del aula), inscripción y ausencia previa, y registra `PRESENT` o `LATE`.
-6. **Finalizar (docente)**: la clase pasa a `FINISHED`, se revocan los QRs y el alumno ya no puede marcar.
-7. **Reportes y auditoría (admin/auditor)**: exportación CSV/XLSX, baja asistencia, y trazabilidad de todo lo sensible.
+1. El ADMIN crea carrera, materia, comisión, estudiantes, docentes, aulas y horarios.
+2. El ADMIN o DOCENTE crea una clase.
+3. El DOCENTE inicia la clase y abre el detalle en vivo.
+4. Se genera el QR dinámico para el check-in.
+5. El ALUMNO escanea el QR, el backend valida token, GPS e inscripción.
+6. El DOCENTE finaliza la clase.
+7. ADMIN y AUDITOR consultan reportes y auditoría.
+
+## Cuentas demo
+
+- ADMIN: `admin@universidad.edu` / `Admin123!`
+- DOCENTE: `docente.demo@universidad.edu` / `Ejemplo123!`
+- ALUMNO: `alumno.demo@universidad.edu` / `Ejemplo123!`
+- AUDITOR: `auditor.demo@universidad.edu` / `Ejemplo123!`
