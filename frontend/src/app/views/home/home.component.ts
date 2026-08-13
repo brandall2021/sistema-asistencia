@@ -116,8 +116,8 @@ interface CommissionGroup {
           <!-- ══════════ ADMIN/AUDITOR: KPIs ══════════ -->
           @if (isAdminOrAuditor) {
             <section class="kpis" aria-label="Indicadores">
-              <app-kpi-card label="Clases de hoy" [value]="summary.classes_today" icon="event_available" color="primary" route="/admin/classes"></app-kpi-card>
-              <app-kpi-card label="Clases activas" [value]="summary.active_classes" icon="record_voice_over" color="success" route="/admin/classes"></app-kpi-card>
+              <app-kpi-card label="Clases de hoy" [value]="summary.classes_today" icon="event_available" color="primary" [route]="isAuditor ? '/admin/reports' : '/admin/classes'"></app-kpi-card>
+              <app-kpi-card label="Clases activas" [value]="summary.active_classes" icon="record_voice_over" color="success" [route]="isAuditor ? '/admin/reports' : '/admin/classes'"></app-kpi-card>
               <app-kpi-card label="Asistencia promedio" [value]="attendanceToday" icon="percent" color="info" route="/admin/reports"></app-kpi-card>
               <app-kpi-card label="Alumnos en riesgo" [value]="summary.low_attendance_students" icon="warning_amber" color="warning" route="/admin/reports"></app-kpi-card>
               <app-kpi-card label="Justificaciones pendientes" [value]="summary.pending_justifications" icon="fact_check" color="danger" route="/admin/reports"></app-kpi-card>
