@@ -206,12 +206,13 @@ export interface Justification {
 
 export interface AuditLog {
   id: string;
-  user_id: string;
-  user_email: string;
+  username: string | null;
   action: string;
   entity: string;
-  entity_id: string;
-  details: string;
+  entity_id: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  details: string | null;
   created_at: string;
 }
 

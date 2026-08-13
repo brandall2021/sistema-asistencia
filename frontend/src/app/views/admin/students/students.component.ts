@@ -1,141 +1,307 @@
-import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { MatTableModule } from '@angular/material/table';
+import { Component, OnInit, TemplateRef, ViewChild } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
-import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatCardModule } from '@angular/material/card';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatMenuModule } from '@angular/material/menu';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { Career, Student } from '../../../core/models';
+import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { ErrorStateComponent } from '../../../shared/components/error-state/error-state.component';
+import { FilterBarComponent } from '../../../shared/components/filter-bar/filter-bar.component';
+import { LoadingSkeletonComponent } from '../../../shared/components/loading-skeleton/loading-skeleton.component';
+import { PageAction, PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { ResponsiveTableComponent, TableColumn } from '../../../shared/components/responsive-table/responsive-table.component';
+import { FormDrawerComponent } from '../../../shared/forms/form-drawer.component';
+import { FieldConfig } from '../../../shared/forms/form-fields';
 import { Toast } from '../../../shared/toast';
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function studentFields(careers: Career[], editing = false): FieldConfig[] {
+  return [
+    { key: 'full_name', label: 'Nombre completo', type: 'text', required: true, section: 'Datos personales', width: 'half' },
+    { key: 'dni', label: 'DNI', type: 'text', section: 'Datos personales', width: 'half' },
+    { key: 'email', label: 'Email', type: 'email', required: true, section: 'Datos personales', width: 'half' },
+    { key: 'password', label: 'Contraseña', type: 'password', required: !editing, section: 'Datos personales', width: 'half' },
+    { key: 'registration_number', label: 'Legajo', type: 'text', required: true, section: 'Datos académicos', width: 'half' },
+    {
+      key: 'career_id',
+      label: 'Carrera',
+      type: 'select',
+      required: true,
+      options: careers.map((career) => ({ label: `${career.name} (${career.code})`, value: career.id })),
+      section: 'Datos académicos',
+      width: 'half',
+    },
+    { key: 'year', label: 'Año', type: 'number', section: 'Datos académicos', width: 'half' },
+  ];
+}
+
+function toStudentCreatePayload(values: Record<string, unknown>): Record<string, unknown> {
+  const email = String(values['email'] ?? '').trim();
+  return {
+    full_name: String(values['full_name'] ?? '').trim(),
+    dni: String(values['dni'] ?? '').trim() || null,
+    email,
+    username: email.split('@')[0] || email,
+    password: String(values['password'] ?? ''),
+    registration_number: String(values['registration_number'] ?? '').trim(),
+    career_id: String(values['career_id'] ?? ''),
+    year: values['year'] === '' || values['year'] == null ? null : Number(values['year']),
+  };
+}
+
+function toStudentUpdatePayload(values: Record<string, unknown>): Record<string, unknown> {
+  return {
+    full_name: String(values['full_name'] ?? '').trim(),
+    email: String(values['email'] ?? '').trim(),
+    registration_number: String(values['registration_number'] ?? '').trim(),
+    dni: String(values['dni'] ?? '').trim() || null,
+    career_id: String(values['career_id'] ?? ''),
+    year: values['year'] === '' || values['year'] == null ? null : Number(values['year']),
+  };
+}
 
 @Component({
   selector: 'app-students',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule,
-    MatFormFieldModule, MatInputModule, MatSelectModule, MatCheckboxModule,
-    MatCardModule, MatProgressSpinnerModule,
+    CommonModule, MatButtonModule, MatDialogModule, MatIconModule, MatMenuModule,
+    PageHeaderComponent, FilterBarComponent, ResponsiveTableComponent, LoadingSkeletonComponent,
+    EmptyStateComponent, ErrorStateComponent,
   ],
   template: `
-    <mat-card>
-      <mat-card-header>
-        <mat-card-title>Estudiantes</mat-card-title>
-        <mat-card-subtitle>Gestión de estudiantes y su carrera</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div class="toolbar">
-          <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Nuevo estudiante</button>
+    <app-page-header
+      title="Estudiantes"
+      subtitle="Gestión de estudiantes y su carrera"
+      icon="school"
+      [breadcrumbs]="breadcrumbs"
+      [primaryAction]="primaryAction"
+      (primaryClick)="openCreate()"
+    ></app-page-header>
+
+    <app-filter-bar
+      searchPlaceholder="Buscar por nombre, legajo, email o carrera"
+      [searchValue]="searchTerm"
+      (searchValueChange)="searchTerm = $event"
+      [resultCount]="filteredItems.length"
+      [activeFilters]="activeFilters"
+      (clearFilters)="clearFilters()"
+      (search)="searchTerm = $event"
+    ></app-filter-bar>
+
+    @if (loading) {
+      <app-loading-skeleton variant="table" [rows]="5"></app-loading-skeleton>
+    } @else if (loadError) {
+      <app-error-state [message]="loadError" (retry)="load()"></app-error-state>
+    } @else {
+      @if (!filteredItems.length) {
+        <app-empty-state [title]="emptyTitle" [message]="emptyMessage" [actionLabel]="emptyActionLabel" (action)="emptyAction()"></app-empty-state>
+      } @else {
+        <app-responsive-table [columns]="columns" [data]="filteredItems" [actionsTemplate]="actionsTpl"></app-responsive-table>
+      }
+    }
+
+    <ng-template #studentTpl let-row>
+      <div class="entity-cell">
+        <div class="entity-avatar">{{ initialForStudent(row.full_name) }}</div>
+        <div>
+          <div class="entity-title">{{ row.full_name }}</div>
+          <div class="entity-subtitle">{{ row.registration_number }}</div>
         </div>
-        <form *ngIf="formVisible" (ngSubmit)="save()" class="form-grid">
-          <mat-form-field appearance="outline"><mat-label>Nombre completo</mat-label><input matInput [(ngModel)]="form.full_name" name="full_name" required /></mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>Email</mat-label><input matInput [(ngModel)]="form.email" name="email" type="email" required /></mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>Usuario</mat-label><input matInput [(ngModel)]="form.username" name="username" required /></mat-form-field>
-          <mat-form-field appearance="outline" *ngIf="!editingId"><mat-label>Contraseña</mat-label><input matInput [(ngModel)]="form.password" name="password" type="password" required /></mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>Legajo</mat-label><input matInput [(ngModel)]="form.registration_number" name="registration_number" required /></mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>DNI</mat-label><input matInput [(ngModel)]="form.dni" name="dni" /></mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>Carrera</mat-label>
-            <mat-select [(ngModel)]="form.career_id" name="career_id" required>
-              <mat-option *ngFor="let c of careers" [value]="c.id">{{ c.name }}</mat-option>
-            </mat-select>
-          </mat-form-field>
-          <mat-form-field appearance="outline"><mat-label>Año</mat-label><input matInput [(ngModel)]="form.year" name="year" type="number" /></mat-form-field>
-          <mat-checkbox [(ngModel)]="form.is_active" name="is_active">Activo</mat-checkbox>
-          <div class="actions">
-            <button mat-raised-button color="primary" type="submit">{{ editingId ? 'Guardar' : 'Crear' }}</button>
-            <button mat-button type="button" (click)="cancel()">Cancelar</button>
-          </div>
-        </form>
-        <table mat-table [dataSource]="items" class="mat-elevation-z2">
-          <ng-container matColumnDef="full_name"><th mat-header-cell *matHeaderCellDef>Nombre</th><td mat-cell *matCellDef="let s">{{ s.full_name }}</td></ng-container>
-          <ng-container matColumnDef="registration_number"><th mat-header-cell *matHeaderCellDef>Legajo</th><td mat-cell *matCellDef="let s">{{ s.registration_number }}</td></ng-container>
-          <ng-container matColumnDef="dni"><th mat-header-cell *matHeaderCellDef>DNI</th><td mat-cell *matCellDef="let s">{{ s.dni }}</td></ng-container>
-          <ng-container matColumnDef="career_name"><th mat-header-cell *matHeaderCellDef>Carrera</th><td mat-cell *matCellDef="let s">{{ s.career_name }}</td></ng-container>
-          <ng-container matColumnDef="email"><th mat-header-cell *matHeaderCellDef>Email</th><td mat-cell *matCellDef="let s">{{ s.email }}</td></ng-container>
-          <ng-container matColumnDef="is_active"><th mat-header-cell *matHeaderCellDef>Activo</th><td mat-cell *matCellDef="let s"><mat-icon [style.color]="s.is_active ? 'green' : 'red'">{{ s.is_active ? 'check_circle' : 'cancel' }}</mat-icon></td></ng-container>
-          <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef>Acciones</th><td mat-cell *matCellDef="let s">
-            <button mat-icon-button (click)="edit(s)"><mat-icon>edit</mat-icon></button>
-            <button mat-icon-button color="warn" (click)="remove(s)"><mat-icon>delete</mat-icon></button>
-          </td></ng-container>
-          <tr mat-header-row *matHeaderRowDef="columns"></tr>
-          <tr mat-row *matRowDef="let row; columns: columns"></tr>
-        </table>
-        <div *ngIf="loading" class="center"><mat-spinner diameter="32"></mat-spinner></div>
-      </mat-card-content>
-    </mat-card>
+      </div>
+    </ng-template>
+
+    <ng-template #statusTpl let-row>
+      <span class="status-chip" [class.is-active]="row.is_active">{{ row.is_active ? 'Activo' : 'Inactivo' }}</span>
+    </ng-template>
+
+    <ng-template #actionsTpl let-row>
+      <button mat-icon-button [matMenuTriggerFor]="rowMenu" aria-label="Acciones de estudiante">
+        <mat-icon>more_vert</mat-icon>
+      </button>
+      <mat-menu #rowMenu="matMenu">
+        <button mat-menu-item (click)="openEdit(row)">
+          <mat-icon>edit</mat-icon>
+          <span>Editar</span>
+        </button>
+        <button mat-menu-item class="danger-action" (click)="remove(row)">
+          <mat-icon>delete</mat-icon>
+          <span>Eliminar</span>
+        </button>
+      </mat-menu>
+    </ng-template>
   `,
-  styles: `.toolbar { margin: 16px 0; } .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; } .actions { display: flex; align-items: center; gap: 8px; } table { width: 100%; } .center { display: flex; justify-content: center; padding: 24px; }`,
+  styles: `
+    .entity-cell { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .entity-avatar { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: var(--color-primary-50); color: var(--color-primary-700); font-weight: 700; flex: none; }
+    .entity-title { font-weight: 600; color: var(--text-primary); }
+    .entity-subtitle { font-size: var(--fs-caption); color: var(--text-secondary); }
+    .status-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--surface-muted); color: var(--text-secondary); font-size: var(--fs-caption); font-weight: 600; }
+    .status-chip.is-active { background: rgba(16, 185, 129, 0.12); color: #047857; }
+    .danger-action { color: var(--color-danger); }
+  `,
 })
 export class StudentsComponent implements OnInit {
+  @ViewChild('studentTpl', { static: true }) studentTpl!: TemplateRef<unknown>;
+  @ViewChild('statusTpl', { static: true }) statusTpl!: TemplateRef<unknown>;
+  @ViewChild('actionsTpl', { static: true }) actionsTpl!: TemplateRef<unknown>;
+
   items: Student[] = [];
   careers: Career[] = [];
-  columns = ['full_name', 'registration_number', 'dni', 'career_name', 'email', 'is_active', 'actions'];
+  columns: TableColumn[] = [];
   loading = true;
-  formVisible = false;
-  editingId: string | null = null;
-  form: any = { full_name: '', email: '', username: '', password: '', registration_number: '', dni: '', career_id: '', year: null, is_active: true };
+  loadError = '';
+  searchTerm = '';
+  primaryAction: PageAction = { label: 'Nuevo estudiante', icon: 'add', type: 'flat', color: 'primary' };
+  breadcrumbs = [
+    { label: 'Inicio', route: '/home' },
+    { label: 'Académico' },
+    { label: 'Estudiantes' },
+  ];
 
-  constructor(private api: ApiService, private toast: Toast) {}
+  constructor(
+    private api: ApiService,
+    private toast: Toast,
+    private dialog: MatDialog,
+    private confirmDialog: ConfirmDialogService,
+    private auth: AuthService,
+  ) {}
 
   ngOnInit(): void {
+    this.columns = [
+      { key: 'full_name', header: 'Estudiante', template: this.studentTpl, mobilePrimary: true },
+      { key: 'career_name', header: 'Carrera', accessor: (row) => String((row as Student).career_name ?? '') },
+      { key: 'email', header: 'Email', accessor: (row) => String((row as Student).email) },
+      { key: 'year', header: 'Año', accessor: (row) => String((row as Student).year ?? '') },
+      { key: 'is_active', header: 'Estado', template: this.statusTpl },
+    ];
     this.load();
   }
 
   async load(): Promise<void> {
     this.loading = true;
+    this.loadError = '';
     try {
-      this.items = await this.api.get<Student[]>('/students');
-      this.careers = await this.api.get<Career[]>('/careers');
-    } catch {
-      this.toast.error('No se pudieron cargar los estudiantes');
+      const [students, careers] = await Promise.all([this.api.get<Student[]>('/students'), this.api.get<Career[]>('/careers')]);
+      this.items = students;
+      this.careers = careers;
+    } catch (error: any) {
+      this.loadError = error?.error?.detail || 'No se pudieron cargar los estudiantes';
     } finally {
       this.loading = false;
     }
   }
 
-  openCreate(): void {
-    this.editingId = null;
-    this.form = { full_name: '', email: '', username: '', password: '', registration_number: '', dni: '', career_id: '', year: null, is_active: true };
-    this.formVisible = true;
+  get filteredItems(): Student[] {
+    const search = normalizeText(this.searchTerm);
+    return this.items.filter((item) => !search || [item.full_name, item.registration_number, item.dni, item.career_name, item.email, item.year, item.username, item.is_active ? 'activo' : 'inactivo'].some((value) => normalizeText(value).includes(search)));
   }
 
-  edit(s: Student): void {
-    this.editingId = s.id;
-    this.form = { full_name: s.full_name, email: s.email, username: s.username, password: '', registration_number: s.registration_number, dni: s.dni, career_id: s.career_id, year: s.year, is_active: s.is_active };
-    this.formVisible = true;
+  get activeFilters(): number {
+    return Number(this.searchTerm.trim().length > 0);
   }
 
-  cancel(): void {
-    this.formVisible = false;
-    this.editingId = null;
+  get emptyTitle(): string {
+    return this.items.length ? 'Sin coincidencias' : 'Todavía no hay estudiantes';
   }
 
-  async save(): Promise<void> {
-    try {
-      if (this.editingId) {
-        const body: any = { full_name: this.form.full_name, email: this.form.email, registration_number: this.form.registration_number, dni: this.form.dni, career_id: this.form.career_id, year: this.form.year, is_active: this.form.is_active };
-        await this.api.patch(`/students/${this.editingId}`, body);
-        this.toast.success('Estudiante actualizado');
-      } else {
-        await this.api.post('/students', this.form);
+  get emptyMessage(): string {
+    return this.items.length ? 'Prueba con otro texto o limpia la búsqueda.' : 'Crea el primer estudiante para empezar a usar el listado.';
+  }
+
+  get emptyActionLabel(): string {
+    return this.activeFilters ? 'Limpiar búsqueda' : 'Nuevo estudiante';
+  }
+
+  initialForStudent(name: string): string {
+    return (name.trim().charAt(0) || 'E').toUpperCase();
+  }
+
+  clearFilters(): void {
+    this.searchTerm = '';
+  }
+
+  emptyAction(): void {
+    if (this.activeFilters) {
+      this.clearFilters();
+      return;
+    }
+    void this.openCreate();
+  }
+
+  async openCreate(): Promise<void> {
+    await this.openDrawer();
+  }
+
+  async openEdit(student: Student): Promise<void> {
+    await this.openDrawer(student);
+  }
+
+  private async openDrawer(student?: Student): Promise<void> {
+    const editing = !!student;
+    const ref = FormDrawerComponent.open(this.dialog, {
+      title: editing ? 'Editar estudiante' : 'Nuevo estudiante',
+      subtitle: editing ? 'Actualiza los datos del estudiante' : 'Completa los datos personales y académicos',
+      icon: 'school',
+      fields: studentFields(this.careers, editing),
+      values: student
+        ? {
+            full_name: student.full_name,
+            dni: student.dni,
+            email: student.email,
+            password: '',
+            registration_number: student.registration_number,
+            career_id: student.career_id,
+            year: student.year,
+          }
+        : { full_name: '', dni: '', email: '', password: '', registration_number: '', career_id: this.careers[0]?.id ?? null, year: null },
+      submitLabel: editing ? 'Guardar cambios' : 'Crear estudiante',
+      submit: async (values: Record<string, unknown>) => {
+        if (student) {
+          await this.api.patch(`/students/${student.id}`, toStudentUpdatePayload(values));
+          const password = String(values['password'] ?? '').trim();
+          if (password) {
+            await this.api.patch(`/users/${student.user_id}`, { password });
+          }
+          this.toast.success('Estudiante actualizado');
+          return;
+        }
+        await this.api.post('/students', toStudentCreatePayload(values));
         this.toast.success('Estudiante creado');
-      }
-      this.cancel();
+      },
+    });
+
+    const result = await firstValueFrom(ref.afterClosed());
+    if (result) {
       await this.load();
-    } catch (e: any) {
-      this.toast.error(e?.error?.detail || 'Error al guardar');
     }
   }
 
-  async remove(s: Student): Promise<void> {
-    if (!confirm(`¿Eliminar al estudiante ${s.full_name}?`)) return;
+  async remove(student: Student): Promise<void> {
+    const confirmed = await firstValueFrom(
+      this.confirmDialog.openConfirm({
+        title: 'Eliminar estudiante',
+        message: `¿Eliminar al estudiante "${student.full_name}"? Esta acción no se puede deshacer.`,
+        confirmLabel: 'Eliminar',
+        destructive: true,
+        confirmIcon: 'delete',
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
     try {
-      await this.api.delete(`/students/${s.id}`);
+      await this.api.delete(`/students/${student.id}`);
       this.toast.success('Estudiante eliminado');
       await this.load();
     } catch (e: any) {
