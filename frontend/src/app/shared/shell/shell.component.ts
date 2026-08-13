@@ -147,10 +147,7 @@ const MENU: MenuGroup[] = [
 })
 export class ShellComponent implements OnInit, OnDestroy {
   appName = 'Asistencia Universitaria';
-  menu: MenuGroup[] = MENU.map((g) => ({
-    ...g,
-    items: g.items.filter((m) => this.auth.hasAnyRole(...m.roles)),
-  })).filter((g) => g.items.length > 0);
+  menu: MenuGroup[] = [];
   mode: 'side' | 'over' = 'side';
   opened = true;
   private mobile = false;
@@ -162,6 +159,10 @@ export class ShellComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.menu = MENU.map((g) => ({
+      ...g,
+      items: g.items.filter((m) => this.auth.hasAnyRole(...m.roles)),
+    })).filter((g) => g.items.length > 0);
     this.notifications.start();
     this.bp.observe(['(max-width: 900px)']).subscribe((state) => {
       this.mobile = state.matches;
